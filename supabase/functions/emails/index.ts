@@ -12,7 +12,7 @@ const supabase = createClient(
 );
 
 const resend = new Resend(Deno.env.get("RESEND_API_KEY")!);
-const BASE_URL = (Deno.env.get("SITE_URL") ?? "https://herdstaging.dev").replace(/\/+$/, "");
+const BASE_URL = (Deno.env.get("SITE_URL") ?? "https://herd.app").replace(/\/+$/, "");
 const MAX_ATTEMPTS = Number.parseInt(Deno.env.get("EMAILS_MAX_ATTEMPTS") ?? "5", 10) || 5;
 
 const CORS_HEADERS = {
@@ -54,6 +54,18 @@ const isEmailType = (value: unknown): value is EmailType =>
     "message_new_conversation",
     "message_unread_reminder",
   ].includes(value);
+
+const formatCurrency = (raw?: string | null): string => {
+  if (raw === undefined || raw === null) return "—";
+  const trimmed = String(raw).trim();
+  if (!trimmed) return "—";
+  if (trimmed.startsWith("$")) return trimmed;
+  const numeric = Number(trimmed.replace(/[^0-9.-]/g, ""));
+  if (Number.isFinite(numeric)) {
+    return `$${numeric.toFixed(2)}`;
+  }
+  return trimmed.startsWith("$") ? trimmed : `$${trimmed}`;
+};
 
 // Util helpers
 function subjectFor(type: EmailType, v: EmailVars): string {
@@ -98,9 +110,10 @@ function renderEmailHTML(type: EmailType, v: EmailVars): string {
 
   let body = "";
   const dashUrl = `${BASE_URL}/dashboard`;
-  const guestBookingsUrl = `${BASE_URL}/dashboard/guestview/mybookings`;
+  const guestBookingsUrl = `${BASE_URL}/dashboard/guestview?tab=bookings`;
+  const hostBookingsUrl = `${dashUrl}?role=host&tab=bookings`;
   const messagesUrl = `${dashUrl}?tab=messages`;
-  const payoutsUrl = `${dashUrl}?tab=payouts`;
+  const payoutsUrl = `${dashUrl}?role=host&tab=payouts`;
 
   switch (type) {
     case "booking_requested_host":
@@ -136,19 +149,19 @@ function renderEmailHTML(type: EmailType, v: EmailVars): string {
           "Guest Details",
           `
             Name: ${v.GUEST_NAME || "Guest"}<br/>
-            ${v.STUDENT_NAMES ? `Students: ${v.STUDENT_NAMES}<br/>` : ""}
-            Guests booked: ${v.GUEST_COUNT || v.QTY || "1"}
+            Guests booked: ${v.GUEST_COUNT || v.QTY || "1"}${v.STUDENT_NAMES ? `<br/>Students: ${v.STUDENT_NAMES}` : ""}
           `.trim()
         )}
         ${section(
           "Payout Summary",
           `
-            Total collected: ${v.TOTAL_COLLECTED || v.TOTAL_AMOUNT || "—"}<br/>
-            Platform fees: ${v.PLATFORM_FEES || "—"}<br/>
-            Your earnings: <strong>${v.HOST_EARNINGS || "—"}</strong>
+            Total collected: ${formatCurrency(v.TOTAL_COLLECTED || v.TOTAL_AMOUNT)}<br/>
+            HERD platform fee: ${formatCurrency(v.PLATFORM_FEES)}<br/>
+            Stripe processing: ${formatCurrency(v.STRIPE_FEES)}<br/>
+            Your earnings: <strong>${formatCurrency(v.HOST_EARNINGS)}</strong>
           `.trim()
         )}
-        ${button("View Booking", v.BOOKING_URL || dashUrl)}
+        ${button("View Booking", v.BOOKING_URL || hostBookingsUrl)}
       `;
       break;
 
@@ -164,7 +177,7 @@ function renderEmailHTML(type: EmailType, v: EmailVars): string {
             Guests attending: ${v.GUEST_COUNT || v.QTY || "1"}
           `.trim()
         )}
-        ${section("Total Paid", `<strong>${v.TOTAL_AMOUNT || v.TOTAL_COLLECTED || "View receipt in your dashboard"}</strong>`)}
+        ${section("Total Paid", `<strong>${formatCurrency(v.TOTAL_AMOUNT || v.TOTAL_COLLECTED)}</strong>`)}
         ${button("View Booking", v.BOOKING_URL || guestBookingsUrl)}
       `;
       break;
@@ -196,10 +209,10 @@ function renderEmailHTML(type: EmailType, v: EmailVars): string {
         ${section(
           "Payout Breakdown",
           `
-            Total collected: ${v.TOTAL_COLLECTED || "—"}<br/>
-            Platform fees: ${v.PLATFORM_FEES || "—"}<br/>
-            Stripe fees: ${v.STRIPE_FEES || "—"}<br/>
-            Your payout: <strong>${v.HOST_EARNINGS || "—"}</strong>
+            Total collected: ${formatCurrency(v.TOTAL_COLLECTED)}<br/>
+            HERD platform fee: ${formatCurrency(v.PLATFORM_FEES)}<br/>
+            Stripe processing: ${formatCurrency(v.STRIPE_FEES)}<br/>
+            Your payout: <strong>${formatCurrency(v.HOST_EARNINGS)}</strong>
           `.trim()
         )}
         ${button("View Payouts", v.PAYOUTS_URL || payoutsUrl)}
@@ -256,8 +269,29 @@ function normalizeVars(raw: unknown): EmailVars {
   const output: EmailVars = {};
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
     if (value === undefined || value === null) continue;
+    if (Array.isArray(value)) {
+      const joined = value.map((item) => (item ?? "")).map(String).filter((item) => item.trim().length > 0).join(", ");
+      if (joined) output[key] = joined;
+      continue;
+    }
     if (typeof value === "string") {
-      output[key] = value;
+      const trimmed = value.trim();
+      if (!trimmed) continue;
+      if ((trimmed.startsWith("[") && trimmed.endsWith("]")) || (trimmed.startsWith("{") && trimmed.endsWith("}"))) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) {
+            const joined = parsed.map((item: unknown) => (item ?? "")).map(String).filter((item) => item.trim().length > 0).join(", ");
+            if (joined) {
+              output[key] = joined;
+              continue;
+            }
+          }
+        } catch {
+          /* ignore parse errors, fall back to raw string */
+        }
+      }
+      output[key] = trimmed;
     } else if (typeof value === "number" || typeof value === "boolean") {
       output[key] = String(value);
     } else if (value instanceof Date) {

@@ -839,6 +839,8 @@ export default function App() {
     const guestNameParam = urlParams.get('guest_name');
     const classParam = urlParams.get('class') ?? urlParams.get('class_id');
     const classTitleParam = urlParams.get('class_title');
+    const roleParam = urlParams.get('role');
+    const normalizedRole = roleParam === 'host' ? 'host' : 'guest';
 
     setCurrentPage('dashboard');
     setDashboardLink({
@@ -850,7 +852,7 @@ export default function App() {
       classId: classParam,
       classTitle: classTitleParam,
       consumed: false,
-      role: 'guest',
+      role: normalizedRole,
     });
 
     window.history.replaceState({}, document.title, window.location.pathname);

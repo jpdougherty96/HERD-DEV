@@ -12,7 +12,7 @@ const supabase = createClient(
 );
 
 const resend = new Resend(Deno.env.get("RESEND_API_KEY")!);
-const BASE_URL = (Deno.env.get("SITE_URL") ?? "https://herd.app").replace(/\/+$/, "");
+const BASE_URL = (Deno.env.get("SITE_URL") ?? "https://herdstaging.dev").replace(/\/+$/, "");
 const MAX_ATTEMPTS = Number.parseInt(Deno.env.get("EMAILS_MAX_ATTEMPTS") ?? "5", 10) || 5;
 
 const CORS_HEADERS = {
@@ -157,7 +157,6 @@ function renderEmailHTML(type: EmailType, v: EmailVars): string {
           `
             Total collected: ${formatCurrency(v.TOTAL_COLLECTED || v.TOTAL_AMOUNT)}<br/>
             HERD platform fee: ${formatCurrency(v.PLATFORM_FEES)}<br/>
-            Stripe processing: ${formatCurrency(v.STRIPE_FEES)}<br/>
             Your earnings: <strong>${formatCurrency(v.HOST_EARNINGS)}</strong>
           `.trim()
         )}
@@ -211,7 +210,6 @@ function renderEmailHTML(type: EmailType, v: EmailVars): string {
           `
             Total collected: ${formatCurrency(v.TOTAL_COLLECTED)}<br/>
             HERD platform fee: ${formatCurrency(v.PLATFORM_FEES)}<br/>
-            Stripe processing: ${formatCurrency(v.STRIPE_FEES)}<br/>
             Your payout: <strong>${formatCurrency(v.HOST_EARNINGS)}</strong>
           `.trim()
         )}

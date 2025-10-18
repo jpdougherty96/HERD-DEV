@@ -1,0 +1,8 @@
+[functions]
+# Allow local dev and your live domains to call Supabase Edge Functions
+allowed_origins = [
+  "http://localhost:3000",
+  "https://herd-dev.vercel.app",
+  "https://herdstaging.dev",
+  "http://192.168.0.62:3000"   # allow all devices on your local Wi-Fi subnet
+]

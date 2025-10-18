@@ -1,0 +1,95 @@
+/* ================================
+   HERD Global Theme Styles
+   Works with Tailwind v3 + shadcn
+   ================================ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---- Base ---- */
+body {
+  @apply bg-herd-bg text-herd-dark font-sans antialiased;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  @apply text-herd-dark font-semibold;
+}
+
+/* ---- Buttons ---- */
+button, .btn {
+  @apply transition-all duration-200;
+}
+
+.btn-primary {
+  @apply bg-herd-green text-white px-4 py-2 rounded-full hover:bg-herd-dark;
+}
+
+.btn-outline {
+  @apply border border-herd-green text-herd-green rounded-full px-4 py-2 hover:bg-herd-green hover:text-white;
+}
+
+/* ---- Inputs & Textareas ---- */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+textarea,
+select {
+  @apply border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-herd-green/50 focus:border-herd-green;
+  background-color: theme('colors.white');
+}
+
+input:disabled {
+  @apply bg-gray-100 cursor-not-allowed;
+}
+
+/* ---- Tabs ---- */
+[data-state="active"] {
+  @apply bg-herd-green/10 text-herd-dark font-semibold rounded-lg;
+}
+
+[data-state="inactive"] {
+  @apply text-herd-dark/70;
+}
+
+/* ---- Switches ---- */
+[data-state="checked"] {
+  @apply bg-herd-green;
+}
+
+[data-state="unchecked"] {
+  @apply bg-gray-300;
+}
+
+/* ---- Cards ---- */
+.card {
+  @apply bg-white border border-gray-200 rounded-2xl shadow-sm p-4;
+}
+
+/* ---- Badges ---- */
+.badge {
+  @apply inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold;
+}
+
+.badge-green {
+  @apply bg-herd-green/10 text-herd-green;
+}
+
+.badge-red {
+  @apply bg-red-100 text-red-700;
+}
+
+.badge-accent {
+  @apply bg-herd-accent/10 text-herd-accent;
+}
+
+button[data-variant='outline'] {
+  border: 2px solid black !important;
+  background-color: #fff !important;
+  color: #1f2b15 !important;
+}
+
+button[data-variant='outline']:hover {
+  background-color: #fff !important;
+  color: #1f2b15 !important;
+}

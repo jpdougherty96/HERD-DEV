@@ -93,3 +93,13 @@ button[data-variant='outline']:hover {
   background-color: #fff !important;
   color: #1f2b15 !important;
 }
+
+.pt-safe-top {
+  padding-top: 0;
+}
+
+@supports (padding-top: env(safe-area-inset-top)) {
+  .pt-safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+}

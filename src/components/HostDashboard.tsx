@@ -510,27 +510,34 @@ export function HostDashboard({
     return end.getTime();
   };
 
+  const hostClasses = useMemo(() => {
+    return classes.filter((cls) => {
+      const hostId = cls.hostId ?? cls.instructorId ?? (cls as any).host_id ?? null;
+      return hostId === user.id;
+    });
+  }, [classes, user.id]);
+
   const upcomingClasses = useMemo(() => {
     const now = Date.now();
-    return classes
+    return hostClasses
       .filter((cls) => {
         const end = getClassEndTimestamp(cls);
         return end === null || end >= now;
       })
       .slice()
       .sort((a, b) => getClassStartTimestamp(a) - getClassStartTimestamp(b));
-  }, [classes]);
+  }, [hostClasses]);
 
   const pastClasses = useMemo(() => {
     const now = Date.now();
-    return classes
+    return hostClasses
       .filter((cls) => {
         const end = getClassEndTimestamp(cls);
         return end !== null && end < now;
       })
       .slice()
       .sort((a, b) => getClassStartTimestamp(b) - getClassStartTimestamp(a));
-  }, [classes]);
+  }, [hostClasses]);
 
   const renderClassCard = (cls: Class, isPast: boolean) => {
     const classBookings = bookings.filter((b) => b.classId === cls.id);
@@ -925,7 +932,7 @@ export function HostDashboard({
               <p className="text-gray-500">Loading classes...</p>
             </CardContent>
           </Card>
-        ) : classes.length === 0 ? (
+        ) : hostClasses.length === 0 ? (
           <Card>
             <CardContent className="text-center py-12">
               <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />

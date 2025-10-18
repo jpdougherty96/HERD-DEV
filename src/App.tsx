@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, useState, useEffect } from 'react';
 import { HomePage } from './components/HomePage';
 import { ClassForm } from './components/ClassForm';
 import { ClassListing } from './components/ClassListing';
@@ -117,6 +117,9 @@ type GuestDashboardDeepLink = {
   conversationId?: string | null;
 };
 
+const CheckoutSuccessPage = React.lazy(() => import("./pages/checkout/CheckoutSuccessPage"));
+const CheckoutCancelPage = React.lazy(() => import("./pages/checkout/CheckoutCancelPage"));
+
 const normalizePathname = (pathname: string) => {
   if (typeof pathname !== 'string') return '/';
   const trimmed = pathname.trim();
@@ -188,6 +191,16 @@ const parseGuestDashboardPath = (pathname: string): GuestDashboardDeepLink | nul
 
   return { tab, conversationId };
 };
+
+function CheckoutRouteFallback({ message }: { message: string }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[#f8f9f6] px-6">
+      <div className="rounded-lg border border-neutral-200 bg-white px-6 py-10 text-center shadow-sm">
+        <p className="text-neutral-600">{message}</p>
+      </div>
+    </div>
+  );
+}
 
 // ===== Mapping helpers: DB → UI =====
 function mapProfileRowToUser(row: any): User {
@@ -376,7 +389,7 @@ export default function App() {
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [favoriteClassIds, setFavoriteClassIds] = useState<string[]>([]);
   const [user, setUser] = useState<User | null>(null);
-  const [authSession, setAuthSession] = useState<any>(null);
+  const [authSession, setAuthSession] = useState<any | undefined>(undefined);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
   const [recoveryEmail, setRecoveryEmail] = useState<string | null>(null);
@@ -795,6 +808,9 @@ export default function App() {
   useEffect(() => {
     if (!pendingGuestDashboardRoute) return;
     if (!user) {
+      if (authSession === undefined || loading) {
+        return;
+      }
       setShowAuthModal(true);
       return;
     }
@@ -807,7 +823,7 @@ export default function App() {
     });
     setCurrentPage('dashboard');
     setPendingGuestDashboardRoute(null);
-  }, [pendingGuestDashboardRoute, user?.id]);
+  }, [pendingGuestDashboardRoute, user?.id, authSession, loading]);
 
   // Handle dashboard deep-links (kept)
   useEffect(() => {
@@ -1755,6 +1771,7 @@ const handleUpdatePost = async (
             }}
             initialTab={!dashboardLink?.consumed ? dashboardLink?.tab ?? null : null}
             initialConversationId={!dashboardLink?.consumed ? dashboardLink?.conversationId ?? null : null}
+            initialMode={!dashboardLink?.consumed ? (dashboardLink?.role === 'host' ? 'host' : dashboardLink?.role === 'guest' ? 'guest' : null) : null}
             favorites={favoriteClassIds}
             onToggleFavorite={toggleFavoriteClass}
             onRelaunchClass={handleRelaunchClass}
@@ -1798,6 +1815,22 @@ const handleUpdatePost = async (
   };
 
   const pathname = typeof window !== 'undefined' ? window.location.pathname : '/';
+  if (pathname.startsWith('/classes/checkout/success')) {
+    return (
+      <Suspense fallback={<CheckoutRouteFallback message="Preparing your confirmation..." />}>
+        <CheckoutSuccessPage />
+      </Suspense>
+    );
+  }
+
+  if (pathname.startsWith('/classes/checkout/cancel')) {
+    return (
+      <Suspense fallback={<CheckoutRouteFallback message="Loading checkout status..." />}>
+        <CheckoutCancelPage />
+      </Suspense>
+    );
+  }
+
   if (pathname.startsWith('/review')) {
     return (
       <div className="min-h-screen bg-[#f8f9f6]">

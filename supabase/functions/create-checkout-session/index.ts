@@ -11,18 +11,22 @@ const SITE_URL = Deno.env.get("SITE_URL") || "http://localhost:3000";
 const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2025-02-24.acacia" });
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
 function headers(extra: Record<string, string> = {}) {
   return {
-    "Access-Control-Allow-Origin": Deno.env.get("ALLOWED_ORIGIN") || "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey, X-Client-Info",
+    ...corsHeaders,
     ...extra,
   };
 }
 
 serve(async (_req: Request) => {
   if (_req.method === "OPTIONS")
-    return new Response("ok", { headers: headers() });
+    return new Response(null, { status: 200, headers: corsHeaders });
   if (_req.method !== "POST")
     return new Response("Method Not Allowed", { status: 405, headers: headers() });
 
@@ -117,6 +121,11 @@ serve(async (_req: Request) => {
     const capture_method = cls.auto_approve ? "automatic" : "manual";
 
     const transferGroup = `booking_${class_id}_${user_id}`;
+    const requestOrigin = _req.headers.get("origin");
+    const normalizedSite = (requestOrigin && requestOrigin.startsWith("http") ? requestOrigin : SITE_URL).replace(/\/$/, "");
+    const origin = normalizedSite || SITE_URL.replace(/\/$/, "");
+    const successUrl = Deno.env.get("STRIPE_SUCCESS_URL") ?? `${origin}/classes/checkout/success`;
+    const cancelUrl = Deno.env.get("STRIPE_CANCEL_URL") ?? `${origin}/classes/checkout/cancel`;
 
     // 💳 Create checkout session with metadata
     const session = await stripe.checkout.sessions.create({
@@ -149,8 +158,8 @@ serve(async (_req: Request) => {
           quantity: requestedQty,
         },
       ],
-      success_url: `${SITE_URL}/classes/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${SITE_URL}/classes/checkout/cancel?class_id=${class_id}`,
+      success_url: `${successUrl}?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: cancelUrl,
     });
 
     return new Response(JSON.stringify({ url: session.url }), {

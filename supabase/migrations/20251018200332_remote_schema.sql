@@ -1,4 +1,4 @@
-alter table "public"."classes" alter column "minimum_age" drop default;
+drop function if exists "public"."delete_conversation_for_user"(_conversation_id uuid);
 
 set check_function_bodies = off;
 
@@ -96,6 +96,7 @@ begin
     c.description,
     c.start_date,
     c.start_time,
+    c.end_date,
     c.number_of_days,
     c.hours_per_day,
     c.price_per_person_cents,
@@ -158,6 +159,7 @@ begin
     'CLASS_SUMMARY', coalesce(v.short_summary, ''),
     'CLASS_DESCRIPTION', coalesce(v.description, ''),
     'CLASS_DATE', v.start_date::text,
+    'CLASS_END_DATE', coalesce(v.end_date, v.start_date)::text,
     'CLASS_TIME', v.start_time::text,
     'CLASS_DURATION_DAYS', v.number_of_days,
     'CLASS_HOURS_PER_DAY', coalesce(v.hours_per_day,0),
@@ -275,30 +277,54 @@ $function$
 ;
 
 CREATE OR REPLACE FUNCTION public.herd_due_payouts(buffer_hours integer)
- RETURNS TABLE(id uuid, host_payout_cents integer, stripe_charge_id text, host_stripe_account_id text)
+ RETURNS TABLE(id uuid, class_id uuid, host_payout_cents integer, stripe_charge_id text, host_stripe_account_id text, class_end_date date, class_end_utc timestamp with time zone)
  LANGUAGE sql
  SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-  with classes_with_ts as (
-    select
-      c.id,
+  WITH classes_with_ts AS (
+    SELECT
+      c.id AS class_id,
       c.host_id,
+      COALESCE(c.end_date, c.start_date) AS effective_end_date,
       (
-        (c.start_date::text || ' ' || coalesce(c.start_time::text,'00:00:00'))
-      )::timestamp at time zone 'utc' as class_start_utc
-    from classes c
+        (
+          COALESCE(c.end_date, c.start_date)::text
+          || ' '
+          || COALESCE(c.start_time::text, '00:00:00')
+        )
+      )::timestamp AT TIME ZONE 'utc' AS class_end_utc
+    FROM public.classes c
   )
-  select
+  SELECT
     b.id,
+    cw.class_id,
     b.host_payout_cents,
     b.stripe_charge_id,
-    p.stripe_account_id as host_stripe_account_id
-  from bookings b
-  join classes_with_ts cw on cw.id = b.class_id
-  join profiles p on p.id = cw.host_id
-  where b.payment_status = 'HELD'
-    and cw.class_start_utc < now() - (buffer_hours || ' hours')::interval;
+    p.stripe_account_id AS host_stripe_account_id,
+    cw.effective_end_date AS class_end_date,
+    cw.class_end_utc
+  FROM public.bookings b
+  JOIN classes_with_ts cw ON cw.class_id = b.class_id
+  JOIN public.profiles p ON p.id = cw.host_id
+  WHERE b.payment_status = 'HELD'
+    AND cw.class_end_utc < now() - (buffer_hours || ' hours')::interval;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.increment_unread_count()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+begin
+  -- increment for all participants except the sender
+  update conversation_participants
+     set unread_count = unread_count + 1
+   where conversation_id = new.conversation_id
+     and user_id <> new.sender_id;
+  return new;
+end;
 $function$
 ;
 
@@ -329,6 +355,21 @@ AS $function$
     WHERE cp.conversation_id = convo_id
       AND cp.user_id = auth.uid()
   );
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.reset_conversation_deletions()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  UPDATE public.conversation_participants
+  SET deleted_at = NULL
+  WHERE conversation_id = NEW.conversation_id;
+  RETURN NEW;
+END;
 $function$
 ;
 
@@ -372,6 +413,36 @@ end;
 $function$
 ;
 
+CREATE OR REPLACE FUNCTION public.trg_set_classes_end_date()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF NEW.start_date IS NULL THEN
+    NEW.end_date := NULL;
+  ELSE
+    NEW.end_date := NEW.start_date + (GREATEST(COALESCE(NEW.number_of_days, 1), 1) - 1);
+  END IF;
+  RETURN NEW;
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.trg_sync_end_date()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  NEW.end_date :=
+    CASE
+      WHEN NEW.number_of_days IS NULL OR NEW.number_of_days < 2 THEN NEW.start_date
+      ELSE NEW.start_date + (NEW.number_of_days - 1)
+    END;
+  RETURN NEW;
+END;
+$function$
+;
+
 CREATE OR REPLACE FUNCTION public.trg_update_host_rating()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -392,15 +463,5 @@ begin
 end;
 $function$
 ;
-
-
-
-  create policy "Allow authenticated uploads"
-  on "storage"."objects"
-  as permissive
-  for insert
-  to authenticated
-with check ((bucket_id = 'class-photos'::text));
-
 
 

@@ -20,9 +20,9 @@ const cryptoProvider = Stripe.createSubtleCryptoProvider();
 const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } });
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": Deno.env.get("ALLOWED_ORIGIN") || "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey, stripe-signature, stripe-account",
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
 const roundCents = (n: number) => Math.round(n);
@@ -31,7 +31,7 @@ const roundCents = (n: number) => Math.round(n);
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS")
-    return new Response("ok", { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(null, { status: 200, headers: corsHeaders });
   if (req.method !== "POST")
     return new Response("Method Not Allowed", { status: 405, headers: corsHeaders });
 

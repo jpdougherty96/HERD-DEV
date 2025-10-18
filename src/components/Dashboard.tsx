@@ -37,6 +37,7 @@ export type Booking = {
   endDate?: string;
   numberOfDays?: number;
   hoursPerDay?: number;
+  classEndTimestamp?: number | null;
   reviewed?: boolean;
   reviewToken?: string | null;
   reviewTokenExpiresAt?: string | null;
@@ -95,6 +96,7 @@ interface DashboardProps {
     classTitle?: string | null;
     bookingId?: string | null;
   } | null;
+  initialMode?: "host" | "guest" | null;
 }
 
 const getConversationOtherProfile = (conv: any, currentUserId: string) => {
@@ -124,12 +126,13 @@ export function Dashboard({
   onDeletePost,
   onSelectPost,
   hostMessageTarget = null,
+  initialMode = null,
 }: DashboardProps) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [activeTab, setActiveTab] = useState(initialTab ?? "overview");
   const [dashboardMode, setDashboardMode] = useState<"host" | "guest">(
-    user.stripeConnected ? "host" : "guest"
+    initialMode ?? (user.stripeConnected ? "host" : "guest")
   );
   const [loadingBookings, setLoadingBookings] = useState(false);
   const [focusedConversationId, setFocusedConversationId] = useState<string | null>(
@@ -175,6 +178,11 @@ export function Dashboard({
     setActiveTab(initialTab);
     lastInitialTabRef.current = initialTab;
   }, [initialTab]);
+
+  useEffect(() => {
+    if (!initialMode) return;
+    setDashboardMode(initialMode);
+  }, [initialMode]);
 
   useEffect(() => {
     if (initialConversationId) {
@@ -616,17 +624,6 @@ export function Dashboard({
         }
       }
 
-      const getClassEndMs = (classInfo: any) => {
-        const dateStr = classInfo?.end_date ?? classInfo?.start_date ?? null;
-        if (!dateStr) return null;
-        const end = new Date(`${dateStr}T${classInfo?.start_time || '00:00:00'}`);
-        if (Number.isNaN(end.getTime())) return null;
-        end.setHours(23, 59, 59, 999);
-        return end.getTime();
-      };
-
-      const pendingPastBookingIds: string[] = [];
-
       const enhanced = Array.from(dedupedMap.values()).map((b: any) => {
         const classInfo = b.classes || {};
         const startDate = classInfo?.start_date || null;
@@ -647,13 +644,16 @@ export function Dashboard({
           return null;
         })();
 
-        const classEndMs = getClassEndMs(classInfo);
-        const isPastClass = classEndMs !== null && classEndMs < nowMs;
+        const classEndMs = (() => {
+          const dateStr = classInfo?.end_date ?? classInfo?.start_date ?? null;
+          if (!dateStr) return null;
+          const end = new Date(`${dateStr}T${classInfo?.start_time || "00:00:00"}`);
+          if (Number.isNaN(end.getTime())) return null;
+          end.setHours(23, 59, 59, 999);
+          return end.getTime();
+        })();
+
         let bookingStatus = b.status;
-        if (isPastClass && bookingStatus === 'PENDING') {
-          pendingPastBookingIds.push(b.id);
-          bookingStatus = 'DENIED';
-        }
 
         let reviewReadyAt: string | null = null;
         if (startDate) {
@@ -708,26 +708,9 @@ export function Dashboard({
           hostName,
           studentCount: b.qty ?? null,
           isGuestBooking: b.user_id === user.id,
+          classEndTimestamp: classEndMs,
         } as Booking;
       });
-
-      if (pendingPastBookingIds.length > 0) {
-        try {
-          await supabase
-            .from('bookings')
-            .update({
-              status: 'DENIED',
-              denied_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            .in('id', pendingPastBookingIds);
-          if (enableDebugLogs) {
-            console.log(`🛑 Auto-denied ${pendingPastBookingIds.length} expired pending bookings`);
-          }
-        } catch (autoErr) {
-          console.error('⚠️ Failed to auto-deny past bookings:', autoErr);
-        }
-      }
 
       setBookings(enhanced);
     } catch (error) {

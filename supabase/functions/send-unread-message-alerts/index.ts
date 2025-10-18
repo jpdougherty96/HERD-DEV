@@ -7,7 +7,17 @@ const HERD_BASE_URL = (Deno.env.get("HERD_BASE_URL") || "https://herd.co").repla
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
 
-serve(async () => {
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+serve(async (_req: Request) => {
+  if (_req.method === "OPTIONS") {
+    return new Response(null, { status: 200, headers: corsHeaders });
+  }
+
   try {
     const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000);
 
@@ -38,7 +48,7 @@ serve(async () => {
     if (conversationsErr) throw conversationsErr;
 
     if (!conversations?.length) {
-      return new Response("No alerts queued", { status: 200 });
+      return new Response("No alerts queued", { status: 200, headers: corsHeaders });
     }
 
     const { data: participants, error: participantsErr } = await admin
@@ -112,7 +122,7 @@ serve(async () => {
     });
 
     if (!recipients.length) {
-      return new Response("No alerts queued", { status: 200 });
+      return new Response("No alerts queued", { status: 200, headers: corsHeaders });
     }
 
     let queued = 0;
@@ -151,9 +161,9 @@ serve(async () => {
       queued++;
     }
 
-    return new Response(`Alerts queued: ${queued}`, { status: 200 });
+    return new Response(`Alerts queued: ${queued}`, { status: 200, headers: corsHeaders });
   } catch (err) {
     console.error("[send-unread-message-alerts]", err);
-    return new Response("Error", { status: 500 });
+    return new Response("Error", { status: 500, headers: corsHeaders });
   }
 });

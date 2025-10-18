@@ -25,11 +25,24 @@ export function ClassListing({ classes, onNavigate, user, onRequireAuth, onSelec
   const [searchTerm, setSearchTerm] = useState('');
   const [bookingClass, setBookingClass] = useState<Class | null>(null);
 
-  const filteredClasses = classes.filter(cls =>
-    cls.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    cls.shortSummary.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    cls.instructorName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const now = Date.now();
+
+  const isPastClass = (cls: Class) => {
+    const dateStr = cls.endDate || cls.startDate;
+    if (!dateStr) return false;
+    const end = new Date(`${dateStr}T${cls.startTime || "00:00:00"}`);
+    if (Number.isNaN(end.getTime())) return false;
+    end.setHours(23, 59, 59, 999);
+    return end.getTime() < now;
+  };
+
+  const filteredClasses = classes
+    .filter((cls) => !isPastClass(cls))
+    .filter(cls =>
+      cls.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      cls.shortSummary.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      cls.instructorName.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
   const formatClassDates = (cls: Class) =>
     formatDateRangeShort(cls.startDate, cls.endDate) || 'Date TBD';

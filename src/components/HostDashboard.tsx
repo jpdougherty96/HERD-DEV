@@ -543,8 +543,15 @@ export function HostDashboard({
     const classBookings = bookings.filter((b) => b.classId === cls.id);
     const PENDINGCount = classBookings.filter((b) => b.status === 'PENDING').length;
     const APPROVEDCount = classBookings.filter((b) => b.status === 'APPROVED' || b.status === 'PAID').length;
-    const hostDeleteDisabled =
-      !user.isAdmin && cls.instructorId === user.id && APPROVEDCount > 0 && !isPast;
+
+    const hostIdentifier = cls.hostId ?? cls.instructorId ?? (cls as any).host_id ?? null;
+    const isClassOwner = hostIdentifier === user.id;
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    const classEndMs = getClassEndTimestamp(cls);
+    const nowMs = Date.now();
+    const pastDeletionWindow = classEndMs !== null ? nowMs >= classEndMs + sevenDaysMs : false;
+
+    const hostDeleteDisabled = !user.isAdmin && isClassOwner && APPROVEDCount > 0 && !pastDeletionWindow;
 
     return (
       <Card key={cls.id} className="overflow-hidden">

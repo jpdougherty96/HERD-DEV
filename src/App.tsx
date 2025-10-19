@@ -110,11 +110,22 @@ const GUEST_DASHBOARD_TAB_PATHS = {
   messages: 'messages',
 } as const;
 
+const HOST_DASHBOARD_TAB_PATHS = {
+  overview: 'overview',
+  classes: 'classes',
+  bookings: 'bookings',
+  messages: 'messages',
+} as const;
+
 type GuestDashboardTab = keyof typeof GUEST_DASHBOARD_TAB_PATHS;
 
 type GuestDashboardDeepLink = {
   tab: GuestDashboardTab;
   conversationId?: string | null;
+};
+
+type HostDashboardDeepLink = {
+  tab: keyof typeof HOST_DASHBOARD_TAB_PATHS;
 };
 
 const CheckoutSuccessPage = React.lazy(() => import("./pages/checkout/CheckoutSuccessPage"));
@@ -190,6 +201,30 @@ const parseGuestDashboardPath = (pathname: string): GuestDashboardDeepLink | nul
       : null;
 
   return { tab, conversationId };
+};
+
+const parseHostDashboardPath = (pathname: string): HostDashboardDeepLink | null => {
+  if (typeof window === 'undefined') return null;
+  if (typeof pathname !== 'string') return null;
+
+  const normalizedPath = normalizePathname(pathname);
+  if (!normalizedPath.startsWith('/dashboard')) return null;
+
+  const rawSegments = normalizedPath.split('/').filter(Boolean);
+  if (rawSegments.length === 0) return null;
+
+  const segments = rawSegments.map((segment) => segment.toLowerCase());
+  if (segments[0] !== 'dashboard') return null;
+
+  const modeSegment = segments[1] ?? 'guestview';
+  if (modeSegment !== 'hostview') return null;
+
+  const tabSegment = segments[2] ?? 'overview';
+  if (tabSegment in HOST_DASHBOARD_TAB_PATHS) {
+    return { tab: tabSegment as keyof typeof HOST_DASHBOARD_TAB_PATHS };
+  }
+
+  return { tab: 'overview' };
 };
 
 function CheckoutRouteFallback({ message }: { message: string }) {
@@ -401,6 +436,7 @@ export default function App() {
   const [classFormInitialData, setClassFormInitialData] = useState<Class | null>(null);
   const [classFormMode, setClassFormMode] = useState<'create' | 'relaunch'>('create');
   const [pendingGuestDashboardRoute, setPendingGuestDashboardRoute] = useState<GuestDashboardDeepLink | null>(null);
+  const [pendingHostDashboardRoute, setPendingHostDashboardRoute] = useState<HostDashboardDeepLink | null>(null);
   const [dashboardLink, setDashboardLink] = useState<{
     tab?: string | null;
     bookingId?: string | null;
@@ -792,7 +828,22 @@ export default function App() {
     if (searchParams.get('page') === 'dashboard') return;
 
     const applyPath = (path: string) => {
-      setPendingGuestDashboardRoute(parseGuestDashboardPath(path));
+      const guestRoute = parseGuestDashboardPath(path);
+      if (guestRoute) {
+        setPendingGuestDashboardRoute(guestRoute);
+        setPendingHostDashboardRoute(null);
+        return;
+      }
+
+      const hostRoute = parseHostDashboardPath(path);
+      if (hostRoute) {
+        setPendingHostDashboardRoute(hostRoute);
+        setPendingGuestDashboardRoute(null);
+        return;
+      }
+
+      setPendingGuestDashboardRoute(null);
+      setPendingHostDashboardRoute(null);
     };
 
     applyPath(window.location.pathname);
@@ -824,6 +875,31 @@ export default function App() {
     setCurrentPage('dashboard');
     setPendingGuestDashboardRoute(null);
   }, [pendingGuestDashboardRoute, user?.id, authSession, loading]);
+
+  useEffect(() => {
+    if (!pendingHostDashboardRoute) return;
+    if (!user) {
+      if (authSession === undefined || loading) {
+        return;
+      }
+      setShowAuthModal(true);
+      return;
+    }
+
+    setDashboardLink({
+      tab: pendingHostDashboardRoute.tab,
+      bookingId: null,
+      conversationId: null,
+      guestId: null,
+      guestName: null,
+      classId: null,
+      classTitle: null,
+      consumed: false,
+      role: 'host',
+    });
+    setCurrentPage('dashboard');
+    setPendingHostDashboardRoute(null);
+  }, [pendingHostDashboardRoute, user?.id, authSession, loading]);
 
   // Handle dashboard deep-links (kept)
   useEffect(() => {
@@ -1832,14 +1908,6 @@ const handleUpdatePost = async (
       </Suspense>
     );
   }
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const currentPath = window.location.pathname;
-    if (currentPage !== 'dashboard' && currentPath.startsWith('/dashboard')) {
-      window.history.replaceState({}, document.title, '/');
-    }
-  }, [currentPage]);
 
   if (pathname.startsWith('/review')) {
     return (

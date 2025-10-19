@@ -241,9 +241,17 @@ export function UserDashboard({
   };
 
   const handleClassTitleClick = (classId: string) => {
-    if (!onManageClass) return;
-    const classData = classes.find(cls => cls.id === classId);
-    if (classData) onManageClass(classData);
+    const classData = classes.find((cls) => cls.id === classId);
+    if (!classData) return;
+
+    if (onSelectClass) {
+      onSelectClass(classData);
+      return;
+    }
+
+    if (onManageClass) {
+      onManageClass(classData);
+    }
   };
 
   const getBookingHostName = (booking: Booking) => {

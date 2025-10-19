@@ -153,10 +153,8 @@ function renderEmailHTML(type: EmailType, v: EmailVars): string {
           `.trim()
         )}
         ${section(
-          "Payout Summary",
+          "Payout",
           `
-            Total collected: ${formatCurrency(v.TOTAL_COLLECTED || v.TOTAL_AMOUNT)}<br/>
-            HERD platform fee: ${formatCurrency(v.PLATFORM_FEES)}<br/>
             Your earnings: <strong>${formatCurrency(v.HOST_EARNINGS)}</strong>
           `.trim()
         )}
@@ -206,11 +204,9 @@ function renderEmailHTML(type: EmailType, v: EmailVars): string {
         <p>Hi ${v.HOST_NAME || "Host"},</p>
         <p>Your payout for <strong>${v.CLASS_TITLE}</strong> is on its way.</p>
         ${section(
-          "Payout Breakdown",
+          "Payout",
           `
-            Total collected: ${formatCurrency(v.TOTAL_COLLECTED)}<br/>
-            HERD platform fee: ${formatCurrency(v.PLATFORM_FEES)}<br/>
-            Your payout: <strong>${formatCurrency(v.HOST_EARNINGS)}</strong>
+            Your earnings: <strong>${formatCurrency(v.HOST_EARNINGS)}</strong>
           `.trim()
         )}
         ${button("View Payouts", v.PAYOUTS_URL || payoutsUrl)}

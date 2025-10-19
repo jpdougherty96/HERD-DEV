@@ -1833,6 +1833,14 @@ const handleUpdatePost = async (
     );
   }
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const currentPath = window.location.pathname;
+    if (currentPage !== 'dashboard' && currentPath.startsWith('/dashboard')) {
+      window.history.replaceState({}, document.title, '/');
+    }
+  }, [currentPage]);
+
   if (pathname.startsWith('/review')) {
     return (
       <div className="min-h-screen bg-[#f8f9f6]">

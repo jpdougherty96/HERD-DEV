@@ -723,20 +723,19 @@ export function Dashboard({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const current = normalizePathname(window.location.pathname);
 
     if (dashboardMode === "guest") {
       if (!Object.prototype.hasOwnProperty.call(GUEST_TAB_PATH_MAP, activeTab)) return;
       const slug = GUEST_TAB_PATH_MAP[activeTab as keyof typeof GUEST_TAB_PATH_MAP];
       const nextPath = `/dashboard/guestview${slug ? `/${slug}` : ""}`;
-      const current = normalizePathname(window.location.pathname);
       if (current !== nextPath) {
         window.history.replaceState({}, document.title, nextPath);
       }
     } else if (dashboardMode === "host") {
-      const hostPath = "/dashboard";
-      const current = normalizePathname(window.location.pathname);
-      if (current !== hostPath) {
-        window.history.replaceState({}, document.title, hostPath);
+      const nextPath = `/dashboard/hostview${activeTab ? `/${activeTab}` : ""}`;
+      if (current !== nextPath) {
+        window.history.replaceState({}, document.title, nextPath);
       }
     }
   }, [dashboardMode, activeTab]);

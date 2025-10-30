@@ -168,7 +168,7 @@ export function ClassForm({
 
     const numberOfDays = Number(formData.numberOfDays);
     const maxStudents = Number(formData.maxStudents);
-    const pricePerPersonCents = normalizeToCents(formData.pricePerPerson.trim());
+    const pricePerPersonCents = normalizeToCents(formData.pricePerPerson.trim(), { assumeInputIsDollars: true });
     const minimumAge = Number(formData.minimumAge || 0);
     const endDate = formData.endDate || (formData.startDate ? computeEndDate(formData.startDate, formData.numberOfDays) : "");
 

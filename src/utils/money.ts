@@ -7,13 +7,37 @@ const toNumber = (value: number | string | null | undefined): number => {
   return 0;
 };
 
+type NormalizeToCentsOptions = {
+  /**
+   * When true, treat the incoming value as a dollar amount even if it parses to a whole integer (e.g. "1000").
+   * Useful for handling raw form input where users enter dollars instead of cents.
+   */
+  assumeInputIsDollars?: boolean;
+};
+
 /**
  * Normalizes a value that may represent dollars or cents into cents.
  * Supports legacy data that may have stored dollars directly.
  */
-export const normalizeToCents = (value: number | string | null | undefined): number => {
+export const normalizeToCents = (
+  value: number | string | null | undefined,
+  options: NormalizeToCentsOptions = {}
+): number => {
+  const { assumeInputIsDollars = false } = options;
   const numeric = toNumber(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+
+  if (assumeInputIsDollars) return Math.round(numeric * 100);
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return 0;
+
+    if (trimmed.includes('.') || trimmed.includes(',')) {
+      return Math.round(numeric * 100);
+    }
+  }
+
   if (Math.abs(numeric) >= 100 && Number.isInteger(numeric)) return Math.round(numeric);
   return Math.round(numeric * 100);
 };

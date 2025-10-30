@@ -17,7 +17,7 @@ import { ClassManagement } from './components/ClassManagement';
 import { supabase } from './utils/supabase/client';
 import { Toaster } from './components/ui/sonner';
 import { toast } from 'sonner@2.0.3';
-import { normalizeToCents } from './utils/money';
+import { normalizeToCents, resolvePriceCentsFromRow } from './utils/money';
 import { ResetPasswordModal } from './components/ResetPasswordModal';
 
 export type Page =
@@ -55,7 +55,7 @@ export type Class = {
   startTime: string;
   endDate: string;
   numberOfDays: number;
-  hoursPerDay?: number;
+  hoursPerDay?: number | null;
   pricePerPerson: number; // ← we will store cents here to match DB, just like before
   maxStudents: number;
   address: {
@@ -278,6 +278,13 @@ function resolveHostName(row: any): string {
   return '';
 }
 
+function resolveHoursPerDay(value: any): number | null {
+  if (value === null || value === undefined) return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0 || numeric >= 24) return null;
+  return numeric;
+}
+
 function mapClassRowToUI(row: any): Class {
   const hostName = resolveHostName(row);
   const instructorNameRaw = typeof row?.instructor_name === 'string' ? row.instructor_name.trim() : '';
@@ -314,8 +321,8 @@ function mapClassRowToUI(row: any): Class {
     startTime: row.start_time ?? '',
     endDate: row.end_date ?? row.start_date ?? '',
     numberOfDays: row.number_of_days ?? 1,
-    hoursPerDay: row.hours_per_day ?? undefined,
-    pricePerPerson: normalizeToCents(row.price_per_person_cents ?? 0), // enforce cents
+    hoursPerDay: resolveHoursPerDay(row.hours_per_day),
+    pricePerPerson: resolvePriceCentsFromRow(row),
     maxStudents: row.max_students ?? 0,
     address: {
       street: row.address_street ?? '',
@@ -511,6 +518,11 @@ export default function App() {
       return;
     }
 
+    const normalizedHoursPerDay =
+      updatedData.hoursPerDay === null
+        ? null
+        : resolveHoursPerDay(updatedData.hoursPerDay);
+
     const updates: Partial<Class> = {
       title: updatedData.title,
       shortSummary: updatedData.shortSummary,
@@ -518,7 +530,7 @@ export default function App() {
       startTime: updatedData.startTime,
       endDate: updatedData.endDate,
       numberOfDays: updatedData.numberOfDays,
-      hoursPerDay: updatedData.hoursPerDay,
+      hoursPerDay: normalizedHoursPerDay,
       pricePerPerson: updatedData.pricePerPerson,
       maxStudents: updatedData.maxStudents,
       address: updatedData.address,
@@ -1038,9 +1050,9 @@ export default function App() {
         ? classData.minimumAge
         : 0;
       const hoursPerDay =
-        classData.hoursPerDay !== undefined && classData.hoursPerDay !== null && Number.isFinite(classData.hoursPerDay)
-          ? classData.hoursPerDay
-          : null;
+        classData.hoursPerDay === null
+          ? null
+          : resolveHoursPerDay(classData.hoursPerDay);
       const endDate =
         classData.endDate && classData.endDate.trim().length > 0
           ? classData.endDate

@@ -93,6 +93,15 @@ const computeEndDate = (startDate: string, numberOfDays: string | number): strin
   return utcDate.toISOString().slice(0, 10);
 };
 
+const parseHoursPerDay = (value: string): number | null => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const numeric = Number(trimmed);
+  if (!Number.isFinite(numeric) || numeric <= 0 || numeric >= 24) return null;
+  return numeric;
+};
+
 const buildInitialFormState = (user: User | null, initialData?: Class | null): ClassFormState => {
   const startDate = initialData?.startDate ?? "";
   const numberOfDaysRaw = initialData?.numberOfDays ?? 1;
@@ -172,11 +181,13 @@ export function ClassForm({
     const minimumAge = Number(formData.minimumAge || 0);
     const endDate = formData.endDate || (formData.startDate ? computeEndDate(formData.startDate, formData.numberOfDays) : "");
 
+    const normalizedHoursPerDay = parseHoursPerDay(formData.hoursPerDay);
+
     const payload: ClassFormSubmit = {
       ...formData,
       endDate,
       numberOfDays,
-      hoursPerDay: formData.hoursPerDay ? Number(formData.hoursPerDay) : undefined,
+      hoursPerDay: normalizedHoursPerDay,
       maxStudents,
       pricePerPerson: pricePerPersonCents,
       minimumAge,

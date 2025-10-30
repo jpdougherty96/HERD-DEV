@@ -5,7 +5,7 @@ import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { Calendar, Clock, Users, ArrowLeft } from "lucide-react";
 import { supabase } from "../utils/supabase/client";
 import type { Class, Page, User } from "../App";
-import { formatPrice, normalizeToCents } from "../utils/money";
+import { formatPrice, resolvePriceCentsFromRow } from "../utils/money";
 import { formatDateRangeDisplay } from "../utils/time";
 
 type HostProfilePageProps = {
@@ -49,6 +49,13 @@ function resolveInstructorName(row: any, host: HostProfile | null) {
   return host?.full_name ?? "Instructor";
 }
 
+function resolveHoursPerDay(value: any): number | null {
+  if (value === null || value === undefined) return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0 || numeric >= 24) return null;
+  return numeric;
+}
+
 function mapRowToClass(row: any, hostProfile: HostProfile | null): Class {
   const instructorName = resolveInstructorName(row, hostProfile);
   const hostProfileData = row?.host_profile ?? hostProfile ?? null;
@@ -61,8 +68,8 @@ function mapRowToClass(row: any, hostProfile: HostProfile | null): Class {
     startTime: row.start_time ?? "",
     endDate: row.end_date ?? row.start_date ?? "",
     numberOfDays: row.number_of_days ?? 1,
-    hoursPerDay: row.hours_per_day ?? undefined,
-    pricePerPerson: normalizeToCents(row.price_per_person_cents ?? 0),
+    hoursPerDay: resolveHoursPerDay(row.hours_per_day),
+    pricePerPerson: resolvePriceCentsFromRow(row),
     maxStudents: row.max_students ?? 0,
     address: {
       street: row.address_street ?? "",

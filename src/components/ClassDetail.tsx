@@ -8,7 +8,7 @@ import { BookingModal } from './BookingModal';
 import { MessageModal } from './MessageModal';
 import { PhotoLightbox } from './PhotoLightbox';
 import { supabase } from '../utils/supabase/client';
-import { formatPrice, normalizeToCents } from '../utils/money';
+import { formatPrice } from '../utils/money';
 import { formatDateRangeDisplay } from '../utils/time';
 import type { Class, User, Page } from '../App';
 import { toast } from 'sonner@2.0.3';
@@ -35,8 +35,12 @@ export function ClassDetail({ classData, user, onNavigate, onRequireAuth, onView
   const [lightboxOpen, setLightboxOpen] = useState(false);
 
   // --- PRICE NORMALIZATION (handles both dollars or cents in pricePerPerson) ---
-  const priceCents = normalizeToCents(classData.pricePerPerson);
-  const priceDisplay = formatPrice(priceCents, { withCurrency: true });
+  const priceDisplay = formatPrice(classData.pricePerPerson, { withCurrency: true });
+  const shouldShowHoursPerDay =
+    typeof classData.hoursPerDay === 'number' &&
+    Number.isFinite(classData.hoursPerDay) &&
+    classData.hoursPerDay > 0 &&
+    classData.hoursPerDay < 24;
 
   const formatTime = (timeString: string) => {
     if (!timeString) return '';
@@ -426,7 +430,7 @@ export function ClassDetail({ classData, user, onNavigate, onRequireAuth, onView
                       <div className="font-medium text-[#2d3d1f]">
                         {classData.numberOfDays} day{classData.numberOfDays > 1 ? 's' : ''}
                       </div>
-                      {classData.hoursPerDay && (
+                      {shouldShowHoursPerDay && (
                         <div className="text-sm text-[#556B2F]">{classData.hoursPerDay} hours/day</div>
                       )}
                     </div>

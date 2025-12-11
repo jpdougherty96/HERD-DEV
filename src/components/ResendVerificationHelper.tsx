@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Mail, AlertCircle, CheckCircle } from 'lucide-react';
-import { supabase } from '../utils/supabase/client';
+import { supabase } from '../utils/supabaseClient';
 
 type ResendVerificationHelperProps = {
   email: string;

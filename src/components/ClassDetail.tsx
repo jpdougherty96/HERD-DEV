@@ -7,10 +7,13 @@ import { ImageWithFallback } from './figma/ImageWithFallback';
 import { BookingModal } from './BookingModal';
 import { MessageModal } from './MessageModal';
 import { PhotoLightbox } from './PhotoLightbox';
-import { supabase } from '../utils/supabase/client';
-import { formatPrice } from '../utils/money';
-import { formatDateRangeDisplay } from '../utils/time';
-import type { Class, User, Page } from '../App';
+import { supabase } from '../utils/supabaseClient';
+import {
+  formatDateRangeDisplay,
+  formatPrice,
+  formatTime,
+} from '@/utils/formatting';
+import type { Class, Page, User } from '../App';
 import { toast } from 'sonner@2.0.3';
 import { useExistingConversation } from './useExistingConversation';
 
@@ -41,15 +44,6 @@ export function ClassDetail({ classData, user, onNavigate, onRequireAuth, onView
     Number.isFinite(classData.hoursPerDay) &&
     classData.hoursPerDay > 0 &&
     classData.hoursPerDay < 24;
-
-  const formatTime = (timeString: string) => {
-    if (!timeString) return '';
-    const [hours, minutes] = timeString.split(':');
-    const hour = parseInt(hours);
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    const displayHour = hour % 12 || 12;
-    return `${displayHour}:${minutes} ${ampm}`;
-  };
 
   const formatAddress = (address: any) => {
     if (typeof address === 'string') {
@@ -419,7 +413,9 @@ export function ClassDetail({ classData, user, onNavigate, onRequireAuth, onView
                         {formatDateRangeDisplay(classData.startDate, classData.endDate)}
                       </div>
                       {classData.startTime && (
-                        <div className="text-sm text-[#556B2F]">{formatTime(classData.startTime)}</div>
+                        <div className="text-sm text-[#556B2F]">
+                          {classData.startTime ? formatTime(classData.startTime) : ""}
+                        </div>
                       )}
                     </div>
                   </div>

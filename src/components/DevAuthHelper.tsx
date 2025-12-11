@@ -4,7 +4,7 @@ import { Card } from './ui/card';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Settings, User, Zap, AlertTriangle } from 'lucide-react';
-import { supabase } from '../utils/supabase/client';
+import { supabase } from '../utils/supabaseClient';
 import { toast } from 'sonner@2.0.3';
 
 // Remove custom ImportMeta type definitions (not needed for Vite/React)

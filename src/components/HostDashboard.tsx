@@ -10,10 +10,9 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Calendar, Users, DollarSign, MessageSquare, Plus, Eye, Check, X, Image as ImageIcon, Trash2, RotateCcw } from 'lucide-react';
-import { supabase } from '../utils/supabase/client';
-import { formatPrice } from '../utils/money';
+import { supabase } from '../utils/supabaseClient';
+import { formatDateRangeShort, formatPrice, formatTime } from '@/utils/formatting';
 import { projectId } from '../utils/supabase/info';
-import { formatDateRangeShort } from '../utils/time';
 import { toast } from 'sonner@2.0.3';
 
 // New booking type for our system
@@ -473,15 +472,6 @@ export function HostDashboard({
     const range = formatDateRangeShort(startDate, endDate);
     if (range) return range;
     return startDate ? formatDate(startDate) : 'Date TBD';
-  };
-
-  const formatTime = (timeString: string) => {
-    if (!timeString) return '';
-    const [hours, minutes] = timeString.split(':');
-    const hour = parseInt(hours);
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    const displayHour = hour % 12 || 12;
-    return `${displayHour}:${minutes} ${ampm}`;
   };
 
   const getStatusColor = (status: string) => {

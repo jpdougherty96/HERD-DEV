@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from './ui/button';
 import { Mail, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react';
-import { supabase } from '../utils/supabase/client';
+import { supabase } from '../utils/supabaseClient';
 import { toast } from 'sonner@2.0.3';
 
 type ResendVerificationButtonProps = {

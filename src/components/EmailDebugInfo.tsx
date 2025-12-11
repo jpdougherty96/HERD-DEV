@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { AlertCircle, Info, Eye, EyeOff, Settings, CheckCircle } from 'lucide-react';
-import { supabase } from '../utils/supabase/client';
+import { supabase } from '../utils/supabaseClient';
 import { ResendVerificationButton } from './ResendVerificationButton';
 import { projectId } from '../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';

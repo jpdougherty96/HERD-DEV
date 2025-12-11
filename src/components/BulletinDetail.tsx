@@ -6,7 +6,7 @@ import { Calendar, Image as ImageIcon, MessageSquare, Tag, Trash2, User, ArrowLe
 import { PhotoLightbox } from "./PhotoLightbox";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { BulletinMessageModal } from "./BulletinMessageModal";
-import type { Post, User as UserType } from "../App";
+import type { Post, User as UserType } from "../types/domain";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { Label } from "./ui/label";

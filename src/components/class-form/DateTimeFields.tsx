@@ -5,7 +5,8 @@ import { Calendar } from "../ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { Clock, CalendarIcon } from "lucide-react";
 import { cn } from "../ui/utils";
-import { formatTime, generateTimeOptions } from "../../utils/time";
+import { formatTime } from "@/utils/formatting";
+import { generateTimeOptions } from "../../utils/time";
 
 export const DateTimeFields = ({
   date,

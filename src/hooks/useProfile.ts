@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { supabase } from "../utils/supabase/client";
+import { supabase } from "../utils/supabaseClient";
 
 // Match your DB schema
 export type Profile = {

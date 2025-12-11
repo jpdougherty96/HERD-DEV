@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Zap, AlertTriangle, CheckCircle } from 'lucide-react';
-import { supabase } from '../utils/supabase/client';
+import { supabase } from '../utils/supabaseClient';
 
 type QuickSignInHelperProps = {
   onAuthSuccess: () => void;

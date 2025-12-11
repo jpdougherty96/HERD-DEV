@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle, Loader2, AlertCircle } from "lucide-react";
 import { Button } from "../../components/ui/button";
-import { supabase } from "../../utils/supabase/client";
+import { supabase } from "../../utils/supabaseClient";
 
 type ConfirmationState = "idle" | "skipped" | "loading" | "success" | "error";
 

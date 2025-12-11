@@ -7,14 +7,14 @@ import { Checkbox } from "./ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { cn } from "./ui/utils";
 import { toast } from "sonner";
-import type { Class } from "../App";
+import type { Class } from "../types/domain";
 import { normalizeToCents } from "../utils/money";
 import { validateClassForm } from "../utils/validation/classForm";
 import { supabaseAdapter } from "../components/shared/PhotoUpload/supabaseAdapter";
 import { PhotoUpload } from "../components/shared/PhotoUpload/PhotoUpload";
 import { AddressFields } from "../components/shared/AddressFields";
 import { DateTimeFields } from "../components/class-form/DateTimeFields";
-import { formatDateRangeDisplay } from "../utils/time";
+import { formatDateRangeDisplay } from "@/utils/formatting";
 
 type ClassFormSubmit = Omit<Class, "createdAt" | "instructorId"> & { id?: string };
 

@@ -7,10 +7,9 @@ import { Badge } from './ui/badge';
 import { MessagingCenter } from './MessagingCenter';
 import { Calendar, Heart, MessageSquare, BookOpen, Star, Eye, HeartIcon, RefreshCw, Megaphone, Pencil, Trash2, Tag } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
-import { supabase } from '../utils/supabase/client';
+import { supabase } from '../utils/supabaseClient';
 import { toast } from 'sonner@2.0.3';
-import { formatPrice } from '../utils/money';
-import { formatDateRangeShort } from '../utils/time';
+import { formatDateRangeShort, formatPrice } from "@/utils/formatting";
 
 interface UserDashboardProps {
   user: User;

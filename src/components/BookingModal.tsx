@@ -6,9 +6,9 @@ import { Label } from './ui/label';
 import { Checkbox } from './ui/checkbox';
 import { X, Users, DollarSign, Calendar, Clock, MapPin, AlertTriangle } from 'lucide-react';
 import type { Class, User } from '../App';
-import { supabase } from '../utils/supabase/client';
+import { supabase } from '../utils/supabaseClient';
 import { normalizeToCents } from '../utils/money';
-import { formatDateRangeDisplay, formatTime as formatTimeDisplay } from '../utils/time';
+import { formatDateRangeDisplay, formatTime as formatTimeDisplay } from "@/utils/formatting";
 
 async function startPayment(classId: string, userId: string, qty: number, studentNames: string[]) {
   const { data, error } = await supabase.functions.invoke('create-checkout-session', {

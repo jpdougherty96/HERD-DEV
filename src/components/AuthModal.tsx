@@ -4,9 +4,9 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { X, Eye, EyeOff, Check, AlertCircle } from "lucide-react";
-import { supabase } from "../utils/supabase/client";
+import { supabase } from "../utils/supabaseClient";
 import { toast } from "sonner";
-
+import { ensureProfilePatched, formatAuthError } from "@/utils/auth";
 
 type AuthModalProps = {
   onClose: () => void;
@@ -24,69 +24,6 @@ const passwordRequirements: PasswordRequirement[] = [
   { label: "Contains lowercase letter", test: (p) => /[a-z]/.test(p) },
   { label: "Contains a number", test: (p) => /\d/.test(p) },
 ];
-
-// --- helpers that align with your schema/RLS ---
-
-/**
- * After a successful sign-in, ensure the user's profile row has
- * full_name/email populated. This is safe with your RLS because
- * users can update their own profile.
- */
-async function ensureProfilePatched(opts: {
-  fullName?: string;
-  email?: string;
-}) {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return;
-
-  // Read current profile
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("id, full_name, email")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (!profile) {
-    // The trigger should have created it. If it didn’t (rare), RLS blocks client inserts.
-    // We silently skip here; backend should guarantee creation via trigger.
-    return;
-  }
-
-  // Prepare minimal patch if fields are blank/missing
-  const patch: Record<string, string> = {};
-  if (opts.fullName && (!profile.full_name || profile.full_name.trim() === "")) {
-    patch.full_name = opts.fullName;
-  }
-  if (opts.email && (!profile.email || profile.email.trim() === "")) {
-    patch.email = opts.email;
-  }
-
-  if (Object.keys(patch).length > 0) {
-    await supabase.from("profiles").update(patch).eq("id", user.id);
-  }
-}
-
-function formatAuthError(error: any) {
-  const msg = String(error?.message ?? "");
-  if (msg.includes("Invalid login credentials") || msg.includes("Invalid email or password")) {
-    return "Email or password is incorrect. Please try again.";
-  }
-  if (msg.includes("Email not CONFIRMED")) {
-    return "Please verify your email address before signing in. Check your inbox for a verification link.";
-  }
-  if (msg.includes("Too many requests")) {
-    return "Too many sign-in attempts. Please wait a few minutes and try again.";
-  }
-  if (msg.includes("Invalid email")) {
-    return "Please enter a valid email address.";
-  }
-  if (msg.includes("already registered")) {
-    return "An account with this email already exists. Please sign in instead.";
-  }
-  return `${msg || "Unknown error"}. Please try again or contact support.`;
-}
 
 export function AuthModal({ onClose, onSuccess }: AuthModalProps) {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -106,8 +43,9 @@ export function AuthModal({ onClose, onSuccess }: AuthModalProps) {
   const [showPasswordRequirements, setShowPasswordRequirements] =
     useState(false);
 
-
-  const isPasswordValid = passwordRequirements.every((req) => req.test(password));
+  const isPasswordValid = passwordRequirements.every((req) =>
+    req.test(password),
+  );
   const doPasswordsMatch = password === confirmPassword;
   const isFormValid = isResetMode
     ? Boolean(email)
@@ -129,7 +67,8 @@ export function AuthModal({ onClose, onSuccess }: AuthModalProps) {
 
     try {
       if (isSignUp) {
-        if (!isPasswordValid) throw new Error("Password does not meet requirements");
+        if (!isPasswordValid)
+          throw new Error("Password does not meet requirements");
         if (!doPasswordsMatch) throw new Error("Passwords do not match");
 
         // Sign up via Supabase Auth. We pass full_name in metadata so your trigger
@@ -150,7 +89,7 @@ export function AuthModal({ onClose, onSuccess }: AuthModalProps) {
           onClose();
           // Keep it simple here; your UI has a resend helper below if needed.
           toast.success(
-            "Account created! Check your email for the verification link to complete registration."
+            "Account created! Check your email for the verification link to complete registration.",
           );
           return;
         }
@@ -182,7 +121,7 @@ export function AuthModal({ onClose, onSuccess }: AuthModalProps) {
         if (data?.user && !data.user.email_confirmed_at) {
           onClose();
           toast.warning(
-            "Please verify your email address before signing in. Check your inbox for a verification link."
+            "Please verify your email address before signing in. Check your inbox for a verification link.",
           );
           return;
         }
@@ -215,14 +154,19 @@ export function AuthModal({ onClose, onSuccess }: AuthModalProps) {
         throw new Error("Please enter the email associated with your account.");
       }
 
-      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        email.trim(),
+        {
+          redirectTo: `${window.location.origin}/reset-password`,
+        },
+      );
 
       if (error) throw new Error(formatAuthError(error));
 
       setResetEmailSent(true);
-      toast.success("Password reset email sent! Check your inbox for the reset link.");
+      toast.success(
+        "Password reset email sent! Check your inbox for the reset link.",
+      );
     } catch (err: any) {
       setError(err?.message || "An error occurred");
     } finally {
@@ -304,7 +248,8 @@ export function AuthModal({ onClose, onSuccess }: AuthModalProps) {
                   <div className="space-y-2 text-sm text-[#2d3d1f]">
                     <p>Forgot your password? No worries.</p>
                     <p>
-                      Enter the email associated with your account and we&apos;ll send you a secure link to set a new password.
+                      Enter the email associated with your account and
+                      we&apos;ll send you a secure link to set a new password.
                     </p>
                   </div>
 
@@ -327,7 +272,8 @@ export function AuthModal({ onClose, onSuccess }: AuthModalProps) {
 
                   {resetEmailSent && (
                     <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded p-3">
-                      Reset instructions were sent to <strong>{email}</strong>. Check your inbox (and spam folder) for the link.
+                      Reset instructions were sent to <strong>{email}</strong>.
+                      Check your inbox (and spam folder) for the link.
                     </div>
                   )}
 
@@ -409,12 +355,16 @@ export function AuthModal({ onClose, onSuccess }: AuthModalProps) {
                         type={showPassword ? "text" : "password"}
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        onFocus={() => isSignUp && setShowPasswordRequirements(true)}
+                        onFocus={() =>
+                          isSignUp && setShowPasswordRequirements(true)
+                        }
                         required
                         className="mt-1 bg-white border-[#a8b892] focus:border-[#556B2F] focus:ring-[#556B2F] pr-10"
                         placeholder="Enter your password"
                         minLength={isSignUp ? 8 : 6}
-                        autoComplete={isSignUp ? "new-password" : "current-password"}
+                        autoComplete={
+                          isSignUp ? "new-password" : "current-password"
+                        }
                       />
                       <Button
                         type="button"
@@ -423,7 +373,11 @@ export function AuthModal({ onClose, onSuccess }: AuthModalProps) {
                         onClick={() => setShowPassword(!showPassword)}
                         className="absolute right-2 top-1/2 -translate-y-1/2 h-auto p-1 text-[#556B2F] hover:bg-transparent"
                       >
-                        {showPassword ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                        {showPassword ? (
+                          <Eye className="w-4 h-4" />
+                        ) : (
+                          <EyeOff className="w-4 h-4" />
+                        )}
                       </Button>
                     </div>
                   </div>
@@ -442,7 +396,10 @@ export function AuthModal({ onClose, onSuccess }: AuthModalProps) {
 
                   {isSignUp && (
                     <div>
-                      <Label htmlFor="confirmPassword" className="text-[#2d3d1f]">
+                      <Label
+                        htmlFor="confirmPassword"
+                        className="text-[#2d3d1f]"
+                      >
                         Confirm Password
                       </Label>
                       <div className="relative">
@@ -460,10 +417,16 @@ export function AuthModal({ onClose, onSuccess }: AuthModalProps) {
                           type="button"
                           variant="ghost"
                           size="sm"
-                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          onClick={() =>
+                            setShowConfirmPassword(!showConfirmPassword)
+                          }
                           className="absolute right-2 top-1/2 -translate-y-1/2 h-auto p-1 text-[#556B2F] hover:bg-transparent"
                         >
-                          {showConfirmPassword ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                          {showConfirmPassword ? (
+                            <Eye className="w-4 h-4" />
+                          ) : (
+                            <EyeOff className="w-4 h-4" />
+                          )}
                         </Button>
                       </div>
                       {confirmPassword && !doPasswordsMatch && (
@@ -477,14 +440,25 @@ export function AuthModal({ onClose, onSuccess }: AuthModalProps) {
 
                   {isSignUp && showPasswordRequirements && (
                     <div className="bg-[#f8f9f6] border border-[#a8b892] rounded-lg p-3">
-                      <p className="text-sm text-[#2d3d1f] mb-2">Password requirements:</p>
+                      <p className="text-sm text-[#2d3d1f] mb-2">
+                        Password requirements:
+                      </p>
                       <div className="space-y-1">
                         {passwordRequirements.map((req, index) => (
-                          <div key={index} className="flex items-center text-xs">
+                          <div
+                            key={index}
+                            className="flex items-center text-xs"
+                          >
                             <Check
                               className={`w-3 h-3 mr-2 ${req.test(password) ? "text-green-600" : "text-gray-400"}`}
                             />
-                            <span className={req.test(password) ? "text-green-600" : "text-[#3c4f21]"}>
+                            <span
+                              className={
+                                req.test(password)
+                                  ? "text-green-600"
+                                  : "text-[#3c4f21]"
+                              }
+                            >
                               {req.label}
                             </span>
                           </div>
@@ -514,7 +488,9 @@ export function AuthModal({ onClose, onSuccess }: AuthModalProps) {
                       onClick={toggleMode}
                       className="text-[#556B2F] hover:underline"
                     >
-                      {isSignUp ? "Already have an account? Sign in" : "Don't have an account? Sign up"}
+                      {isSignUp
+                        ? "Already have an account? Sign in"
+                        : "Don't have an account? Sign up"}
                     </button>
                   </div>
                 </>
@@ -523,7 +499,6 @@ export function AuthModal({ onClose, onSuccess }: AuthModalProps) {
           </CardContent>
         </Card>
       </div>
-
     </>
   );
 }

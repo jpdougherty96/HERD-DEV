@@ -22,10 +22,9 @@ import {
   Image as ImageIcon
 } from 'lucide-react';
 import { BroadcastMessageModal } from './BroadcastMessageModal';
-import { formatPrice } from '../utils/money';
-import { supabase } from '../utils/supabase/client';
+import { formatDateRangeShort, formatPrice, formatTime } from '@/utils/formatting';
+import { supabase } from '../utils/supabaseClient';
 import { toast } from 'sonner@2.0.3';
-import { formatDateRangeShort } from '../utils/time';
 
 interface Booking {
   id: string;
@@ -175,15 +174,6 @@ export function ClassManagement({ classData, user, onNavigate, onDeleteClass, on
     const range = formatDateRangeShort(startDate, endDate);
     if (range) return range;
     return startDate ? formatDate(startDate) : 'Date TBD';
-  };
-
-  const formatTime = (timeString: string) => {
-    if (!timeString) return '';
-    const [hours, minutes] = timeString.split(':');
-    const hour = parseInt(hours);
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    const displayHour = hour % 12 || 12;
-    return `${displayHour}:${minutes} ${ampm}`;
   };
 
   const getStatusColor = (status: string) => {

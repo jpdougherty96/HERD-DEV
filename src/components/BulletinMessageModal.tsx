@@ -3,8 +3,8 @@ import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Textarea } from "./ui/textarea";
 import { MessageSquare, Send, X } from "lucide-react";
-import { supabase } from "../utils/supabase/client";
-import type { Post, User } from "../App";
+import { supabase } from "../utils/supabaseClient";
+import type { Post, User } from "../types/domain";
 import { toast } from "sonner";
 
 interface BulletinMessageModalProps {

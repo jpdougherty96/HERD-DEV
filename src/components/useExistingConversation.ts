@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { supabase } from "../utils/supabase/client";
+import { supabase } from "../utils/supabaseClient";
 
 export function useExistingConversation(
   classId: string | null | undefined,

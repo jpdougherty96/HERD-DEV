@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Shield, Lock } from "lucide-react";
 import { toast } from "sonner";
 
-import { supabase } from "../utils/supabase/client";
+import { supabase } from "../utils/supabaseClient";
 
 const stripePromise = loadStripe(
   import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string

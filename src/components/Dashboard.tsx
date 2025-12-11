@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import type { User, Class, Page, Post } from "../App";
+import type { Class, Page, Post, User } from "../types/domain";
 import { HostDashboard } from "./HostDashboard";
 import { UserDashboard } from "./UserDashboard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Calendar, MessageSquare, Star, BookOpen, Megaphone } from "lucide-react";
-import { supabase } from "../utils/supabase/client";
+import { supabase } from "../utils/supabaseClient";
 import { Toaster, toast } from "sonner";
 import { Switch } from "./ui/switch";
 

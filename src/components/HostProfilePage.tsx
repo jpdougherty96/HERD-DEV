@@ -3,10 +3,14 @@ import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { Calendar, Clock, Users, ArrowLeft } from "lucide-react";
-import { supabase } from "../utils/supabase/client";
-import type { Class, Page, User } from "../App";
-import { formatPrice, resolvePriceCentsFromRow } from "../utils/money";
-import { formatDateRangeDisplay } from "../utils/time";
+import { supabase } from "../utils/supabaseClient";
+import type { Class, Page, User } from "../types/domain";
+import {
+  formatDateRangeDisplay,
+  formatPrice,
+  formatTime,
+} from "@/utils/formatting";
+import { resolvePriceCentsFromRow } from "../utils/money";
 
 type HostProfilePageProps = {
   hostId: string;
@@ -26,15 +30,6 @@ type HostProfile = {
 function formatClassDates(startDate?: string, endDate?: string) {
   const label = formatDateRangeDisplay(startDate, endDate);
   return label || "Date TBD";
-}
-
-function formatTimeDisplay(timeString: string) {
-  if (!timeString) return "";
-  const [hours, minutes] = timeString.split(":");
-  const hourValue = parseInt(hours ?? "0", 10);
-  const ampm = hourValue >= 12 ? "PM" : "AM";
-  const displayHour = hourValue % 12 || 12;
-  return `${displayHour}:${minutes ?? "00"} ${ampm}`;
 }
 
 function resolveInstructorName(row: any, host: HostProfile | null) {
@@ -338,7 +333,7 @@ export function HostProfilePage({
                     <div className="flex items-center gap-2">
                       <Clock className="w-4 h-4 text-[#556B2F]" />
                       <span>
-                        {cls.startTime ? formatTimeDisplay(cls.startTime) : `${cls.numberOfDays} day${cls.numberOfDays > 1 ? "s" : ""}`}
+                        {cls.startTime ? formatTime(cls.startTime) : `${cls.numberOfDays} day${cls.numberOfDays > 1 ? "s" : ""}`}
                         {cls.hoursPerDay ? ` • ${cls.hoursPerDay} hour${cls.hoursPerDay > 1 ? "s" : ""}/day` : ""}
                       </span>
                     </div>

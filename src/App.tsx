@@ -1,190 +1,123 @@
-import React, { Suspense, useState, useEffect } from 'react';
-import { HomePage } from './components/HomePage';
-import { ClassForm } from './components/ClassForm';
-import { ClassListing } from './components/ClassListing';
-import { ClassDetail } from './components/ClassDetail';
-import { HostProfilePage } from './components/HostProfilePage';
-import { BulletinBoard } from './components/BulletinBoard';
-import { BulletinDetail } from './components/BulletinDetail';
-import { Navigation } from './components/Navigation';
-import ReviewHost from './components/ReviewHost';
-import { AuthModal } from './components/AuthModal';
-import { OnboardingModal } from './components/OnboardingModal';
-import { EmailVerificationBanner } from './components/EmailVerificationBanner';
-import { ProfilePage } from './components/ProfilePage';
-import { Dashboard } from './components/Dashboard';
-import { ClassManagement } from './components/ClassManagement';
-import { supabase } from './utils/supabase/client';
-import { Toaster } from './components/ui/sonner';
-import { toast } from 'sonner@2.0.3';
-import { normalizeToCents, resolvePriceCentsFromRow } from './utils/money';
-import { ResetPasswordModal } from './components/ResetPasswordModal';
-
-export type Page =
-  | 'home'
-  | 'classes'
-  | 'class-detail'
-  | 'host-profile'
-  | 'create-class'
-  | 'bulletin'
-  | 'bulletin-detail'
-  | 'profile'
-  | 'dashboard'
-  | 'edit-class'
-  | 'manage-class';
-
-// ===== UI Types (keep as-is) =====
-export type User = {
-  id: string;
-  email: string;
-  name: string;
-  farmName?: string;
-  bio?: string;
-  profilePicture?: string;
-  location?: string;
-  stripeConnected: boolean;
-  isAdmin?: boolean;
-  createdAt: string;
-};
-
-export type Class = {
-  id: string;
-  title: string;
-  shortSummary: string;
-  startDate: string;
-  startTime: string;
-  endDate: string;
-  numberOfDays: number;
-  hoursPerDay?: number | null;
-  pricePerPerson: number; // ← we will store cents here to match DB, just like before
-  maxStudents: number;
-  address: {
-    street: string;
-    city: string;
-    state: string;
-    zipCode: string;
-    country?: string;
-  };
-  instructorName: string;   // backed by classes.instructor_name, falls back to host profile name
-  instructorId: string;
-  hostId: string;
-  host_id?: string; // legacy snake_case consumer support
-  hostName?: string;
-  minimumAge: number;
-  instructorBio: string;
-  instructorAvatar?: string | null;
-  advisories: string;
-  houseRules: string;
-  photos?: string[];
-  auto_approve: boolean;
-  createdAt: string;
-  hostRatingAverage?: number | null;
-  hostRatingCount?: number;
-  hostProfile?: {
-    fullName?: string;
-    farmName?: string;
-    bio?: string;
-    avatarUrl?: string | null;
-    ratingAverage?: number | null;
-    ratingCount?: number;
-  } | null;
-};
-
-export type Post = {
-  id: string;
-  title: string;
-  content: string;
-  author: string;   // we can hydrate from profiles later (now: local user.name or blank)
-  authorId: string;
-  authorEmail?: string | null;
-  createdAt: string;
-  category: string;
-  photos?: string[];
-};
+import React, { Suspense, useState, useEffect } from "react";
+import { HomePage } from "./components/HomePage";
+import { ClassForm } from "./components/ClassForm";
+import { ClassListing } from "./components/ClassListing";
+import { ClassDetail } from "./components/ClassDetail";
+import { HostProfilePage } from "./components/HostProfilePage";
+import { BulletinBoard } from "./components/BulletinBoard";
+import { BulletinDetail } from "./components/BulletinDetail";
+import { Navigation } from "./components/Navigation";
+import ReviewHost from "./components/ReviewHost";
+import { AuthModal } from "./components/AuthModal";
+import { OnboardingModal } from "./components/OnboardingModal";
+import { EmailVerificationBanner } from "./components/EmailVerificationBanner";
+import { ProfilePage } from "./components/ProfilePage";
+import { Dashboard } from "./components/Dashboard";
+import { ClassManagement } from "./components/ClassManagement";
+import { supabase } from "./utils/supabaseClient";
+import { Toaster } from "./components/ui/sonner";
+import { toast } from "sonner@2.0.3";
+import { normalizeToCents, resolvePriceCentsFromRow } from "./utils/money";
+import { ResetPasswordModal } from "./components/ResetPasswordModal";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import {
+  applyInstructorFallback,
+  mapClassRowToUI,
+  resolveHoursPerDay,
+  useClasses,
+} from "@/hooks/useClasses";
+import { resolveInitialPage } from "@/utils/routing";
+import type {
+  Class,
+  GuestDashboardDeepLink,
+  GuestDashboardTab,
+  HostDashboardDeepLink,
+  Page,
+  Post,
+  User,
+} from "./types/domain";
 
 const GUEST_DASHBOARD_TAB_PATHS = {
-  overview: '',
-  bookings: 'mybookings',
-  favorites: 'favorites',
-  bulletins: 'mybulletins',
-  messages: 'messages',
+  overview: "",
+  bookings: "mybookings",
+  favorites: "favorites",
+  bulletins: "mybulletins",
+  messages: "messages",
 } as const;
 
 const HOST_DASHBOARD_TAB_PATHS = {
-  overview: 'overview',
-  classes: 'classes',
-  bookings: 'bookings',
-  messages: 'messages',
+  overview: "overview",
+  classes: "classes",
+  bookings: "bookings",
+  messages: "messages",
 } as const;
 
-type GuestDashboardTab = keyof typeof GUEST_DASHBOARD_TAB_PATHS;
-
-type GuestDashboardDeepLink = {
-  tab: GuestDashboardTab;
-  conversationId?: string | null;
-};
-
-type HostDashboardDeepLink = {
-  tab: keyof typeof HOST_DASHBOARD_TAB_PATHS;
-};
-
-const CheckoutSuccessPage = React.lazy(() => import("./pages/checkout/CheckoutSuccessPage"));
-const CheckoutCancelPage = React.lazy(() => import("./pages/checkout/CheckoutCancelPage"));
+const CheckoutSuccessPage = React.lazy(
+  () => import("./pages/checkout/CheckoutSuccessPage"),
+);
+const CheckoutCancelPage = React.lazy(
+  () => import("./pages/checkout/CheckoutCancelPage"),
+);
 
 const normalizePathname = (pathname: string) => {
-  if (typeof pathname !== 'string') return '/';
+  if (typeof pathname !== "string") return "/";
   const trimmed = pathname.trim();
-  if (!trimmed || trimmed === '/') return '/';
-  return trimmed.replace(/\/+$/, '') || '/';
+  if (!trimmed || trimmed === "/") return "/";
+  return trimmed.replace(/\/+$/, "") || "/";
 };
 
-const parseGuestDashboardPath = (pathname: string): GuestDashboardDeepLink | null => {
-  if (typeof window === 'undefined') return null;
-  if (typeof pathname !== 'string') return null;
+const parseGuestDashboardPath = (
+  pathname: string,
+): GuestDashboardDeepLink | null => {
+  if (typeof window === "undefined") return null;
+  if (typeof pathname !== "string") return null;
 
   const normalizedPath = normalizePathname(pathname);
-  if (!normalizedPath.startsWith('/dashboard')) return null;
+  if (!normalizedPath.startsWith("/dashboard")) return null;
 
-  const rawSegments = normalizedPath.split('/').filter(Boolean);
+  const rawSegments = normalizedPath.split("/").filter(Boolean);
   if (rawSegments.length === 0) return null;
 
   const segments = rawSegments.map((segment) => segment.toLowerCase());
-  if (segments[0] !== 'dashboard') return null;
+  if (segments[0] !== "dashboard") return null;
 
-  const modeSegment = segments[1] ?? 'guestview';
-  if (modeSegment !== 'guestview') return null;
+  const modeSegment = segments[1] ?? "guestview";
+  if (modeSegment !== "guestview") return null;
 
-  const tabSegment = segments[2] ?? '';
-  const rawTabSegment = rawSegments[2] ?? '';
+  const tabSegment = segments[2] ?? "";
+  const rawTabSegment = rawSegments[2] ?? "";
 
   let tab: GuestDashboardTab | null = null;
 
   if (!tabSegment) {
-    tab = 'overview';
+    tab = "overview";
   } else {
-    const directMatch = (Object.entries(GUEST_DASHBOARD_TAB_PATHS) as Array<[GuestDashboardTab, string]>)
-      .find(([, slug]) => slug === tabSegment || slug === rawTabSegment);
+    const directMatch = (
+      Object.entries(GUEST_DASHBOARD_TAB_PATHS) as Array<
+        [GuestDashboardTab, string]
+      >
+    ).find(([, slug]) => slug === tabSegment || slug === rawTabSegment);
 
     if (directMatch) {
       tab = directMatch[0];
     } else {
       switch (tabSegment) {
-        case 'overview':
-          tab = 'overview';
+        case "overview":
+          tab = "overview";
           break;
-        case 'bookings':
-        case 'mybookings':
-          tab = 'bookings';
+        case "bookings":
+        case "mybookings":
+          tab = "bookings";
           break;
-        case 'favorites':
-          tab = 'favorites';
+        case "favorites":
+          tab = "favorites";
           break;
-        case 'bulletins':
-        case 'mybulletins':
-          tab = 'bulletins';
+        case "bulletins":
+        case "mybulletins":
+          tab = "bulletins";
           break;
-        case 'messages':
-          tab = 'messages';
+        case "messages":
+          tab = "messages";
           break;
         default:
           tab = null;
@@ -196,35 +129,39 @@ const parseGuestDashboardPath = (pathname: string): GuestDashboardDeepLink | nul
 
   const rawConversationId = rawSegments[3] ?? null;
   const conversationId =
-    tab === 'messages' && typeof rawConversationId === 'string' && rawConversationId.length > 0
+    tab === "messages" &&
+    typeof rawConversationId === "string" &&
+    rawConversationId.length > 0
       ? rawConversationId
       : null;
 
   return { tab, conversationId };
 };
 
-const parseHostDashboardPath = (pathname: string): HostDashboardDeepLink | null => {
-  if (typeof window === 'undefined') return null;
-  if (typeof pathname !== 'string') return null;
+const parseHostDashboardPath = (
+  pathname: string,
+): HostDashboardDeepLink | null => {
+  if (typeof window === "undefined") return null;
+  if (typeof pathname !== "string") return null;
 
   const normalizedPath = normalizePathname(pathname);
-  if (!normalizedPath.startsWith('/dashboard')) return null;
+  if (!normalizedPath.startsWith("/dashboard")) return null;
 
-  const rawSegments = normalizedPath.split('/').filter(Boolean);
+  const rawSegments = normalizedPath.split("/").filter(Boolean);
   if (rawSegments.length === 0) return null;
 
   const segments = rawSegments.map((segment) => segment.toLowerCase());
-  if (segments[0] !== 'dashboard') return null;
+  if (segments[0] !== "dashboard") return null;
 
-  const modeSegment = segments[1] ?? 'guestview';
-  if (modeSegment !== 'hostview') return null;
+  const modeSegment = segments[1] ?? "guestview";
+  if (modeSegment !== "hostview") return null;
 
-  const tabSegment = segments[2] ?? 'overview';
+  const tabSegment = segments[2] ?? "overview";
   if (tabSegment in HOST_DASHBOARD_TAB_PATHS) {
     return { tab: tabSegment as keyof typeof HOST_DASHBOARD_TAB_PATHS };
   }
 
-  return { tab: 'overview' };
+  return { tab: "overview" };
 };
 
 function CheckoutRouteFallback({ message }: { message: string }) {
@@ -238,171 +175,25 @@ function CheckoutRouteFallback({ message }: { message: string }) {
 }
 
 // ===== Mapping helpers: DB → UI =====
-function mapProfileRowToUser(row: any): User {
-  return {
-    id: row.id,
-    email: row.email ?? '',
-    name: row.full_name || (row.email ? row.email.split('@')[0] : 'User'),
-    farmName: row.farm_name ?? '',
-    bio: row.bio ?? '',
-    profilePicture: row.avatar_url ?? '',
-    location: row.location ?? '',
-    stripeConnected: !!row.stripe_connected,
-    isAdmin: !!row.is_admin,
-    createdAt: row.created_at ?? new Date().toISOString(),
-  };
-}
-
-function resolveHostName(row: any): string {
-  const hostProfile =
-    row?.host_profile ??
-    row?.profiles ??
-    row?.profile ??
-    row?.hostProfile ??
-    null;
-
-  const candidates = [
-    row?.instructor_name,
-    row?.host_name,
-    row?.hostName,
-    hostProfile?.full_name,
-    hostProfile?.name,
-  ];
-
-  for (const value of candidates) {
-    if (typeof value === 'string' && value.trim().length > 0) {
-      return value.trim();
-    }
-  }
-
-  return '';
-}
-
-function resolveHoursPerDay(value: any): number | null {
-  if (value === null || value === undefined) return null;
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric) || numeric <= 0 || numeric >= 24) return null;
-  return numeric;
-}
-
-function mapClassRowToUI(row: any): Class {
-  const hostName = resolveHostName(row);
-  const instructorNameRaw = typeof row?.instructor_name === 'string' ? row.instructor_name.trim() : '';
-  const instructorName = instructorNameRaw || hostName || '';
-  const hostProfile =
-    row?.host_profile ??
-    row?.profiles ??
-    row?.profile ??
-    row?.hostProfile ??
-    null;
-  const ratingAverageRaw =
-    hostProfile?.rating_average ??
-    hostProfile?.ratingAverage ??
-    row?.rating_average ??
-    null;
-  const ratingCountRaw =
-    hostProfile?.rating_count ??
-    hostProfile?.ratingCount ??
-    row?.rating_count ??
-    null;
-  const ratingAverage =
-    ratingAverageRaw === null || ratingAverageRaw === undefined || ratingAverageRaw === ''
-      ? null
-      : Number(ratingAverageRaw);
-  const ratingCount =
-    ratingCountRaw === null || ratingCountRaw === undefined || ratingCountRaw === ''
-      ? 0
-      : Number(ratingCountRaw);
-  return {
-    id: row.id,
-    title: row.title,
-    shortSummary: row.short_summary ?? '',
-    startDate: row.start_date ?? '',
-    startTime: row.start_time ?? '',
-    endDate: row.end_date ?? row.start_date ?? '',
-    numberOfDays: row.number_of_days ?? 1,
-    hoursPerDay: resolveHoursPerDay(row.hours_per_day),
-    pricePerPerson: resolvePriceCentsFromRow(row),
-    maxStudents: row.max_students ?? 0,
-    address: {
-      street: row.address_street ?? '',
-      city: row.address_city ?? '',
-      state: row.address_state ?? '',
-      zipCode: row.address_zip ?? '',
-      country: row.address_country ?? '',
-    },
-    instructorName,
-    hostId: row.host_id,
-    host_id: row.host_id,
-    hostName: hostName || instructorName,
-    instructorId: row.host_id,
-    minimumAge: row.minimum_age ?? 0,
-    instructorBio: row.instructor_bio ?? '',
-    instructorAvatar: hostProfile?.avatar_url ?? null,
-    advisories: row.advisories ?? '',
-    houseRules: row.house_rules ?? '',
-    photos: row.photos ?? [],
-    auto_approve: !!row.auto_approve,
-    createdAt: row.created_at ?? new Date().toISOString(),
-    hostRatingAverage: Number.isFinite(ratingAverage) ? ratingAverage : null,
-    hostRatingCount: Number.isFinite(ratingCount) ? ratingCount : 0,
-    hostProfile: {
-      fullName: hostProfile?.full_name ?? '',
-      farmName: hostProfile?.farm_name ?? '',
-      bio: hostProfile?.bio ?? '',
-      avatarUrl: hostProfile?.avatar_url ?? null,
-      ratingAverage: Number.isFinite(ratingAverage) ? ratingAverage : null,
-      ratingCount: Number.isFinite(ratingCount) ? ratingCount : 0,
-    },
-  };
-}
-
-function applyInstructorFallback(cls: Class, currentUser?: User | null): Class {
-  const trimmedInstructorName = (cls.instructorName ?? '').trim();
-  const trimmedHostName = (cls.hostName ?? '').trim();
-
-  if (trimmedInstructorName && trimmedHostName) {
-    return cls;
-  }
-
-  const fallbackName = trimmedInstructorName
-    || trimmedHostName
-    || (currentUser && cls.instructorId === currentUser.id ? currentUser.name : '');
-
-  if (!fallbackName) {
-    return cls;
-  }
-
-  return {
-    ...cls,
-    instructorName: trimmedInstructorName || fallbackName,
-    hostName: trimmedHostName || fallbackName,
-  };
-}
-
 function mapPostRowToUI(row: any): Post {
-  const profile =
-    row?.author_profile ??
-    row?.profile ??
-    row?.profiles ??
-    null;
+  const profile = row?.author_profile ?? row?.profile ?? row?.profiles ?? null;
   const authorNameRaw =
-    typeof profile?.full_name === 'string'
+    typeof profile?.full_name === "string"
       ? profile.full_name
-      : typeof row?.author === 'string'
+      : typeof row?.author === "string"
         ? row.author
-        : '';
-  const authorName = authorNameRaw?.trim?.() ? authorNameRaw.trim() : '';
+        : "";
+  const authorName = authorNameRaw?.trim?.() ? authorNameRaw.trim() : "";
   const categoryRaw =
-    typeof row?.category === 'string' && row.category.trim().length > 0
+    typeof row?.category === "string" && row.category.trim().length > 0
       ? row.category.trim()
-      : 'General Discussion';
+      : "General Discussion";
   const photosArray = Array.isArray(row?.photos) ? row.photos : [];
 
   return {
     id: row.id,
     title: row.title,
-    content: row.content ?? '',
+    content: row.content ?? "",
     author: authorName,
     authorId: row.user_id,
     createdAt: row.created_at ?? new Date().toISOString(),
@@ -415,35 +206,55 @@ function getConversationOtherProfile(conv: any, currentUserId: string) {
   const hostProfile = conv.host_profile ?? conv.host ?? null;
   const guestProfile = conv.guest_profile ?? conv.guest ?? null;
 
-  if (conv.host_id && conv.host_id !== currentUserId && hostProfile) return hostProfile;
-  if (conv.guest_id && conv.guest_id !== currentUserId && guestProfile) return guestProfile;
+  if (conv.host_id && conv.host_id !== currentUserId && hostProfile)
+    return hostProfile;
+  if (conv.guest_id && conv.guest_id !== currentUserId && guestProfile)
+    return guestProfile;
   if (conv.host_id === currentUserId) return guestProfile;
   if (conv.guest_id === currentUserId) return hostProfile;
   return hostProfile || guestProfile || null;
 }
 
 export default function App() {
-  const [currentPage, setCurrentPage] = useState<Page>('home');
+  const {
+    user,
+    setUser,
+    authSession,
+    setAuthSession,
+    emailVerified,
+    setEmailVerified,
+    recoveryEmail,
+    setRecoveryEmail,
+    showResetPasswordModal,
+    setShowResetPasswordModal,
+    loading,
+    setLoading,
+    loadUserProfile,
+  } = useCurrentUser();
+  const { classes, setClasses, refresh: refreshClasses } = useClasses(user);
+  const [currentPage, setCurrentPage] = useState<Page>(() =>
+    typeof window !== "undefined"
+      ? resolveInitialPage(window.location.pathname)
+      : "home",
+  );
   const [selectedClass, setSelectedClass] = useState<Class | null>(null);
   const [selectedHostId, setSelectedHostId] = useState<string | null>(null);
-  const [classes, setClasses] = useState<Class[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [favoriteClassIds, setFavoriteClassIds] = useState<string[]>([]);
-  const [user, setUser] = useState<User | null>(null);
-  const [authSession, setAuthSession] = useState<any | undefined>(undefined);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
-  const [recoveryEmail, setRecoveryEmail] = useState<string | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [loadingMessage, setLoadingMessage] = useState('Loading...');
-  const [emailVerified, setEmailVerified] = useState(true);
+  const [loadingMessage, setLoadingMessage] = useState("Loading...");
   const [dataLoaded, setDataLoaded] = useState(false);
-  const [classFormInitialData, setClassFormInitialData] = useState<Class | null>(null);
-  const [classFormMode, setClassFormMode] = useState<'create' | 'relaunch'>('create');
-  const [pendingGuestDashboardRoute, setPendingGuestDashboardRoute] = useState<GuestDashboardDeepLink | null>(null);
-  const [pendingHostDashboardRoute, setPendingHostDashboardRoute] = useState<HostDashboardDeepLink | null>(null);
+  const [classFormInitialData, setClassFormInitialData] =
+    useState<Class | null>(null);
+  const [classFormMode, setClassFormMode] = useState<"create" | "relaunch">(
+    "create",
+  );
+  const [pendingGuestDashboardRoute, setPendingGuestDashboardRoute] =
+    useState<GuestDashboardDeepLink | null>(null);
+  const [pendingHostDashboardRoute, setPendingHostDashboardRoute] =
+    useState<HostDashboardDeepLink | null>(null);
   const [dashboardLink, setDashboardLink] = useState<{
     tab?: string | null;
     bookingId?: string | null;
@@ -461,8 +272,8 @@ export default function App() {
     const fresh = posts.find((post) => post.id === selectedPost.id);
     if (!fresh) {
       setSelectedPost(null);
-      if (currentPage === 'bulletin-detail') {
-        setCurrentPage('bulletin');
+      if (currentPage === "bulletin-detail") {
+        setCurrentPage("bulletin");
       }
       return;
     }
@@ -500,9 +311,9 @@ export default function App() {
     try {
       localStorage.setItem(key, JSON.stringify(data));
     } catch (error: any) {
-      if (error?.name === 'QuotaExceededError') {
+      if (error?.name === "QuotaExceededError") {
         try {
-          localStorage.removeItem('herd-posts');
+          localStorage.removeItem("herd-posts");
           localStorage.setItem(key, JSON.stringify(data));
         } catch {}
       }
@@ -510,11 +321,11 @@ export default function App() {
   };
 
   const handleSubmitEditedClass = async (
-    updatedData: Omit<Class, 'createdAt' | 'instructorId'> & { id?: string }
+    updatedData: Omit<Class, "createdAt" | "instructorId"> & { id?: string },
   ) => {
     const classId = updatedData.id ?? selectedClass?.id;
     if (!classId) {
-      toast.error('Unable to identify the class you are editing.');
+      toast.error("Unable to identify the class you are editing.");
       return;
     }
 
@@ -545,11 +356,11 @@ export default function App() {
 
     const success = await handleUpdateClass(classId, updates, {
       hasApprovedBookings: false,
-      successMessage: 'Class details updated successfully.',
+      successMessage: "Class details updated successfully.",
     });
 
     if (success) {
-      setCurrentPage('manage-class');
+      setCurrentPage("manage-class");
     }
   };
 
@@ -558,7 +369,9 @@ export default function App() {
       const cached = localStorage.getItem(key);
       return cached ? JSON.parse(cached) : null;
     } catch {
-      try { localStorage.removeItem(key); } catch {}
+      try {
+        localStorage.removeItem(key);
+      } catch {}
       return null;
     }
   };
@@ -574,36 +387,36 @@ export default function App() {
     if (dataLoaded) return;
 
     setLoading(true);
-    setLoadingMessage('Loading your data...');
+    setLoadingMessage("Loading your data...");
 
     try {
       // use cached data
-      const cachedClasses = getCachedData('herd-classes');
-      const cachedPosts = getCachedData('herd-posts');
+      const cachedClasses = getCachedData("herd-classes");
+      const cachedPosts = getCachedData("herd-posts");
       if (cachedClasses?.length > 0) {
         const normalizedCached = cachedClasses.map((cls: Class) =>
           applyInstructorFallback(
             {
               ...cls,
-              hostName: cls.hostName || cls.instructorName || '',
-              instructorName: cls.instructorName || cls.hostName || '',
+              hostName: cls.hostName || cls.instructorName || "",
+              instructorName: cls.instructorName || cls.hostName || "",
             },
-            user
-          )
+            user,
+          ),
         );
         setClasses(normalizedCached);
-        cacheData('herd-classes', normalizedCached);
+        cacheData("herd-classes", normalizedCached);
       }
       if (cachedPosts?.length > 0) setPosts(cachedPosts);
 
       // fetch fresh in parallel (with a soft timeout)
       const dataLoadingPromise = Promise.allSettled([
-        loadClassesFromServer(),
-        loadPostsFromServer()
+        refreshClasses(),
+        loadPostsFromServer(),
       ]);
 
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Data loading timeout')), 10000);
+        setTimeout(() => reject(new Error("Data loading timeout")), 10000);
       });
 
       try {
@@ -615,40 +428,19 @@ export default function App() {
       setDataLoaded(true);
       setLoading(false);
     } catch (err) {
-      console.error('Failed to load initial data:', err);
+      console.error("Failed to load initial data:", err);
       setDataLoaded(true);
       setLoading(false);
     }
   };
 
   // ===== Supabase data fetchers (no more legacy endpoints) =====
-  const loadClassesFromServer = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('classes')
-        .select(`
-          *,
-          host_profile:profiles!classes_host_id_fkey(full_name, avatar_url, farm_name, bio, rating_average, rating_count)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(200);
-
-      if (error) throw error;
-      const normalized = (data ?? [])
-        .map(mapClassRowToUI)
-        .map((cls) => applyInstructorFallback(cls, user));
-      setClasses(normalized);
-      cacheData('herd-classes', normalized);
-    } catch (error: any) {
-      console.error('Error loading classes:', error?.message || error);
-    }
-  };
-
   const loadPostsFromServer = async () => {
     try {
       const { data, error } = await supabase
-        .from('posts')
-        .select(`
+        .from("posts")
+        .select(
+          `
           *,
           author_profile:profiles!posts_user_id_fkey(
             id,
@@ -656,31 +448,34 @@ export default function App() {
             email,
             avatar_url
           )
-        `)
-        .order('created_at', { ascending: false })
+        `,
+        )
+        .order("created_at", { ascending: false })
         .limit(200);
 
       if (error) throw error;
       const ui = (data ?? []).map(mapPostRowToUI);
       setPosts(ui);
-      cacheData('herd-posts', ui);
+      cacheData("herd-posts", ui);
     } catch (error: any) {
-      console.error('Error loading posts:', error?.message || error);
+      console.error("Error loading posts:", error?.message || error);
     }
   };
 
   const loadFavoritesFromServer = async (userId: string) => {
     try {
       const { data, error } = await supabase
-        .from('favorites')
-        .select('class_id')
-        .eq('user_id', userId);
+        .from("favorites")
+        .select("class_id")
+        .eq("user_id", userId);
 
       if (error) throw error;
-      const ids = Array.isArray(data) ? data.map((row: any) => row.class_id).filter(Boolean) : [];
+      const ids = Array.isArray(data)
+        ? data.map((row: any) => row.class_id).filter(Boolean)
+        : [];
       setFavoriteClassIds(ids);
     } catch (error: any) {
-      console.error('Error loading favorites:', error?.message || error);
+      console.error("Error loading favorites:", error?.message || error);
       setFavoriteClassIds([]);
     }
   };
@@ -698,7 +493,7 @@ export default function App() {
 
     // strip ?verified=true if present
     const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('verified') === 'true') {
+    if (urlParams.get("verified") === "true") {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
 
@@ -706,10 +501,12 @@ export default function App() {
       try {
         const sessionPromise = supabase.auth.getSession();
         const timeoutPromise = new Promise<any>((_, reject) =>
-          setTimeout(() => reject(new Error('Session check timeout')), 2000)
+          setTimeout(() => reject(new Error("Session check timeout")), 2000),
         );
 
-        const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]) as any;
+        const {
+          data: { session },
+        } = (await Promise.race([sessionPromise, timeoutPromise])) as any;
         if (!mounted) return;
 
         setAuthSession(session);
@@ -718,9 +515,10 @@ export default function App() {
           const actuallyVerified = !!session.user.email_confirmed_at;
           setEmailVerified(actuallyVerified);
 
-          setLoadingMessage('Loading your profile...');
+          setLoadingMessage("Loading your profile...");
           try {
-            await loadUserProfile(session.user.id, 0);
+            const profile = await loadUserProfile(session.user.id, 0);
+            if (!profile) setShowOnboarding(true);
           } catch {
             if (mounted) {
               setLoading(false);
@@ -738,47 +536,67 @@ export default function App() {
     initializeAuth();
 
     // Auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
 
       setAuthSession(session);
 
-      if (event === 'PASSWORD_RECOVERY' && session?.user) {
+      if (event === "PASSWORD_RECOVERY" && session?.user) {
         setEmailVerified(!!session.user.email_confirmed_at);
         setShowAuthModal(false);
         setShowResetPasswordModal(true);
-        setRecoveryEmail(session.user.email ?? (session.user.user_metadata as any)?.email ?? null);
+        setRecoveryEmail(
+          session.user.email ??
+            (session.user.user_metadata as any)?.email ??
+            null,
+        );
         setLoading(false);
-        toast.info('Enter a new password to finish resetting your account.');
+        toast.info("Enter a new password to finish resetting your account.");
         return;
       }
 
-      if (event === 'SIGNED_IN' && session?.user) {
+      if (event === "SIGNED_IN" && session?.user) {
         const actuallyVerified = !!session.user.email_confirmed_at;
         setEmailVerified(actuallyVerified);
         setShowResetPasswordModal(false);
         setRecoveryEmail(null);
 
         const currentUrlParams = new URLSearchParams(window.location.search);
-        if (session.user.email_confirmed_at && currentUrlParams.get('verified') === 'true') {
-          setTimeout(() => toast.success('Email verified successfully! Welcome to HERD.'), 500);
+        if (
+          session.user.email_confirmed_at &&
+          currentUrlParams.get("verified") === "true"
+        ) {
+          setTimeout(
+            () =>
+              toast.success("Email verified successfully! Welcome to HERD."),
+            500,
+          );
         }
-        loadUserProfile(session.user.id, 0);
-      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+        loadUserProfile(session.user.id, 0).then((profile) => {
+          if (!profile) setShowOnboarding(true);
+        });
+      } else if (event === "TOKEN_REFRESHED" && session?.user) {
         const actuallyVerified = !!session.user.email_confirmed_at;
         setEmailVerified(actuallyVerified);
-        if (!user) loadUserProfile(session.user.id, 0);
-      } else if (event === 'USER_UPDATED' && session?.user) {
+        if (!user)
+          loadUserProfile(session.user.id, 0).then((profile) => {
+            if (!profile) setShowOnboarding(true);
+          });
+      } else if (event === "USER_UPDATED" && session?.user) {
         const actuallyVerified = !!session.user.email_confirmed_at;
         setEmailVerified(actuallyVerified);
         setShowResetPasswordModal(false);
         setRecoveryEmail(null);
-        loadUserProfile(session.user.id, 0);
-      } else if (event === 'SIGNED_OUT') {
+        loadUserProfile(session.user.id, 0).then((profile) => {
+          if (!profile) setShowOnboarding(true);
+        });
+      } else if (event === "SIGNED_OUT") {
         setUser(null);
         setEmailVerified(true);
         setLoading(false);
-        setCurrentPage('home');
+        setCurrentPage("home");
         setShowResetPasswordModal(false);
         setRecoveryEmail(null);
       }
@@ -794,22 +612,30 @@ export default function App() {
   // Handle Stripe URL params (kept as-is; refreshes profile)
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const stripeParam = urlParams.get('stripe');
+    const stripeParam = urlParams.get("stripe");
     if (!stripeParam || !user) return;
 
     const processStripeParam = () => {
       window.history.replaceState({}, document.title, window.location.pathname);
 
-      if (stripeParam === 'connected') {
-        toast.success('Stripe account connected successfully! You can now create classes.');
+      if (stripeParam === "connected") {
+        toast.success(
+          "Stripe account connected successfully! You can now create classes.",
+        );
         if (user) {
-          loadUserProfile(user.id, 0);
-          setCurrentPage('profile');
+          loadUserProfile(user.id, 0).then((profile) => {
+            if (!profile) setShowOnboarding(true);
+          });
+          setCurrentPage("profile");
         }
-      } else if (stripeParam === 'error') {
-        toast.error('There was an error connecting your Stripe account. Please try again.');
-      } else if (stripeParam === 'refresh') {
-        toast.warning('Stripe onboarding needs to be completed. Please finish the setup process.');
+      } else if (stripeParam === "error") {
+        toast.error(
+          "There was an error connecting your Stripe account. Please try again.",
+        );
+      } else if (stripeParam === "refresh") {
+        toast.warning(
+          "Stripe onboarding needs to be completed. Please finish the setup process.",
+        );
       }
     };
 
@@ -818,7 +644,7 @@ export default function App() {
   }, [user?.id]);
 
   useEffect(() => {
-    if (currentPage !== 'dashboard') return;
+    if (currentPage !== "dashboard") return;
     if (!dashboardLink || dashboardLink.consumed) return;
 
     const timer = setTimeout(() => {
@@ -829,15 +655,15 @@ export default function App() {
   }, [currentPage, dashboardLink]);
 
   useEffect(() => {
-    if (currentPage === 'dashboard') return;
+    if (currentPage === "dashboard") return;
     if (!dashboardLink) return;
     setDashboardLink(null);
   }, [currentPage]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
     const searchParams = new URLSearchParams(window.location.search);
-    if (searchParams.get('page') === 'dashboard') return;
+    if (searchParams.get("page") === "dashboard") return;
 
     const applyPath = (path: string) => {
       const guestRoute = parseGuestDashboardPath(path);
@@ -864,8 +690,8 @@ export default function App() {
       applyPath(window.location.pathname);
     };
 
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   useEffect(() => {
@@ -882,9 +708,9 @@ export default function App() {
       tab: pendingGuestDashboardRoute.tab,
       conversationId: pendingGuestDashboardRoute.conversationId ?? null,
       consumed: false,
-      role: 'guest',
+      role: "guest",
     });
-    setCurrentPage('dashboard');
+    setCurrentPage("dashboard");
     setPendingGuestDashboardRoute(null);
   }, [pendingGuestDashboardRoute, user?.id, authSession, loading]);
 
@@ -907,30 +733,30 @@ export default function App() {
       classId: null,
       classTitle: null,
       consumed: false,
-      role: 'host',
+      role: "host",
     });
-    setCurrentPage('dashboard');
+    setCurrentPage("dashboard");
     setPendingHostDashboardRoute(null);
   }, [pendingHostDashboardRoute, user?.id, authSession, loading]);
 
   // Handle dashboard deep-links (kept)
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const pageParam = urlParams.get('page');
-    if (!pageParam || pageParam !== 'dashboard' || !user) return;
+    const pageParam = urlParams.get("page");
+    if (!pageParam || pageParam !== "dashboard" || !user) return;
 
-    const bookingParam = urlParams.get('booking');
-    const actionParam = urlParams.get('action');
-    const tabParam = urlParams.get('tab');
-    const conversationParam = urlParams.get('conversation');
-    const guestParam = urlParams.get('guest') ?? urlParams.get('guest_id');
-    const guestNameParam = urlParams.get('guest_name');
-    const classParam = urlParams.get('class') ?? urlParams.get('class_id');
-    const classTitleParam = urlParams.get('class_title');
-    const roleParam = urlParams.get('role');
-    const normalizedRole = roleParam === 'host' ? 'host' : 'guest';
+    const bookingParam = urlParams.get("booking");
+    const actionParam = urlParams.get("action");
+    const tabParam = urlParams.get("tab");
+    const conversationParam = urlParams.get("conversation");
+    const guestParam = urlParams.get("guest") ?? urlParams.get("guest_id");
+    const guestNameParam = urlParams.get("guest_name");
+    const classParam = urlParams.get("class") ?? urlParams.get("class_id");
+    const classTitleParam = urlParams.get("class_title");
+    const roleParam = urlParams.get("role");
+    const normalizedRole = roleParam === "host" ? "host" : "guest";
 
-    setCurrentPage('dashboard');
+    setCurrentPage("dashboard");
     setDashboardLink({
       tab: tabParam,
       bookingId: bookingParam,
@@ -947,108 +773,76 @@ export default function App() {
 
     if (!bookingParam && !actionParam) {
       setTimeout(() => {
-        const showWelcome = window.innerWidth < 768 || !localStorage.getItem('herd-dashboard-visited');
+        const showWelcome =
+          window.innerWidth < 768 ||
+          !localStorage.getItem("herd-dashboard-visited");
         if (showWelcome) {
-          toast.success('Welcome to your HERD dashboard! Here you can view and manage your classes and bookings.');
-          localStorage.setItem('herd-dashboard-visited', 'true');
+          toast.success(
+            "Welcome to your HERD dashboard! Here you can view and manage your classes and bookings.",
+          );
+          localStorage.setItem("herd-dashboard-visited", "true");
         }
       }, 1000);
-    } else if (bookingParam && actionParam && (actionParam === 'approve' || actionParam === 'decline')) {
+    } else if (
+      bookingParam &&
+      actionParam &&
+      (actionParam === "approve" || actionParam === "decline")
+    ) {
       setTimeout(() => {
-        toast.info('Host booking actions will be enabled after we add a safe RLS policy for hosts to update bookings.'); // see handleBookingAction()
+        toast.info(
+          "Host booking actions will be enabled after we add a safe RLS policy for hosts to update bookings.",
+        ); // see handleBookingAction()
       }, 500);
     }
   }, [user?.id]);
 
-  // ===== User/profile loader (DB → UI) =====
-  const loadUserProfile = async (userId: string, retryCount = 0) => {
-    const maxRetries = 1;
-
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, email, full_name, farm_name, bio, location, avatar_url, stripe_connected, is_admin, created_at')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (error) throw error;
-
-      if (!data) {
-        // No profile row (should be rare now that trigger/backfill exist)
-        setShowOnboarding(true);
-        setLoading(false);
-        return null;
-      }
-
-      const uiUser = mapProfileRowToUser(data);
-      setUser(uiUser);
-      setLoading(false);
-      return uiUser;
-
-    } catch (error: any) {
-      const msg = error?.message || 'Unknown error';
-      if (retryCount < maxRetries && !/timeout|abort/i.test(msg)) {
-        await new Promise(r => setTimeout(r, 1000));
-        return loadUserProfile(userId, retryCount + 1);
-      }
-
-      if (authSession?.user) {
-        const fallbackUser: User = {
-          id: authSession.user.id,
-          email: authSession.user.email || '',
-          name: authSession.user.user_metadata?.name || authSession.user.email?.split('@')[0] || 'User',
-          stripeConnected: false,
-          createdAt: new Date().toISOString(),
-        };
-        setUser(fallbackUser);
-        setShowOnboarding(true);
-      }
-
-      setLoading(false);
-      return null;
-    }
-  };
-
   // ===== Class/Post create/delete (direct to Supabase) =====
-  const handleCreateClass = async (classData: Omit<Class, 'id' | 'createdAt' | 'instructorId' | 'instructorName'>) => {
+  const handleCreateClass = async (
+    classData: Omit<
+      Class,
+      "id" | "createdAt" | "instructorId" | "instructorName"
+    >,
+  ) => {
     if (!user) return;
 
     try {
       const { data: currentUser } = await supabase.auth.getUser();
       if (!currentUser?.user) {
-        toast.warning('Please log in to create a class.');
+        toast.warning("Please log in to create a class.");
         return;
       }
 
-      const startDate = (classData.startDate ?? '').trim();
-      const rawStartTime = (classData.startTime ?? '').trim();
+      const startDate = (classData.startDate ?? "").trim();
+      const rawStartTime = (classData.startTime ?? "").trim();
 
       if (!startDate) {
-        toast.warning('Please select a start date.');
+        toast.warning("Please select a start date.");
         return;
       }
 
       if (!rawStartTime) {
-        toast.warning('Please select a start time.');
+        toast.warning("Please select a start time.");
         return;
       }
 
-      const startTime =
-        /^\d{2}:\d{2}(:\d{2})?$/.test(rawStartTime)
-          ? rawStartTime.length === 5
-            ? `${rawStartTime}:00`
-            : rawStartTime
-          : rawStartTime;
+      const startTime = /^\d{2}:\d{2}(:\d{2})?$/.test(rawStartTime)
+        ? rawStartTime.length === 5
+          ? `${rawStartTime}:00`
+          : rawStartTime
+        : rawStartTime;
 
-      const numberOfDays = Number.isFinite(classData.numberOfDays) && classData.numberOfDays > 0
-        ? classData.numberOfDays
-        : 1;
-      const maxStudents = Number.isFinite(classData.maxStudents) && classData.maxStudents > 0
-        ? classData.maxStudents
-        : 1;
-      const minimumAge = Number.isFinite(classData.minimumAge) && classData.minimumAge >= 0
-        ? classData.minimumAge
-        : 0;
+      const numberOfDays =
+        Number.isFinite(classData.numberOfDays) && classData.numberOfDays > 0
+          ? classData.numberOfDays
+          : 1;
+      const maxStudents =
+        Number.isFinite(classData.maxStudents) && classData.maxStudents > 0
+          ? classData.maxStudents
+          : 1;
+      const minimumAge =
+        Number.isFinite(classData.minimumAge) && classData.minimumAge >= 0
+          ? classData.minimumAge
+          : 0;
       const hoursPerDay =
         classData.hoursPerDay === null
           ? null
@@ -1060,7 +854,7 @@ export default function App() {
 
       const pricePerPersonCents = normalizeToCents(classData.pricePerPerson);
       if (pricePerPersonCents <= 0) {
-        toast.warning('Please enter a valid price for your class.');
+        toast.warning("Please enter a valid price for your class.");
         return;
       }
 
@@ -1069,7 +863,7 @@ export default function App() {
         host_id: currentUser.user.id,
         title: classData.title,
         short_summary: classData.shortSummary,
-        description: classData.shortSummary ?? '', // adjust if you collect a separate description
+        description: classData.shortSummary ?? "", // adjust if you collect a separate description
         start_date: startDate,
         start_time: startTime,
         end_date: endDate,
@@ -1079,103 +873,114 @@ export default function App() {
         max_students: maxStudents,
         minimum_age: minimumAge,
         instructor_bio: classData.instructorBio,
-        instructor_name: classData.instructorName ? classData.instructorName.trim() : null,
+        instructor_name: classData.instructorName
+          ? classData.instructorName.trim()
+          : null,
         advisories: classData.advisories,
         house_rules: classData.houseRules,
         photos: classData.photos ?? [],
         auto_approve: !!classData.auto_approve,
-        address_street: classData.address?.street ?? '',
-        address_city: classData.address?.city ?? '',
-        address_state: classData.address?.state ?? '',
-        address_zip: classData.address?.zipCode ?? '',
-        address_country: classData.address?.country ?? '',
+        address_street: classData.address?.street ?? "",
+        address_city: classData.address?.city ?? "",
+        address_state: classData.address?.state ?? "",
+        address_zip: classData.address?.zipCode ?? "",
+        address_country: classData.address?.country ?? "",
       };
 
       const { data, error } = await supabase
-        .from('classes')
+        .from("classes")
         .insert([insertRow])
-        .select('*')
+        .select("*")
         .single();
 
       if (error) throw error;
 
       const saved = applyInstructorFallback(mapClassRowToUI(data), user);
-      setClasses(prev => {
+      setClasses((prev) => {
         const updated = [...prev, saved];
-        cacheData('herd-classes', updated);
+        cacheData("herd-classes", updated);
         return updated;
       });
 
-      toast.success('Class created and posted');
+      toast.success("Class created and posted");
       setClassFormInitialData(null);
-      setClassFormMode('create');
-      setCurrentPage('dashboard');
+      setClassFormMode("create");
+      setCurrentPage("dashboard");
     } catch (error: any) {
-      console.error('Error creating class:', error);
-      toast.error('Failed to create class. Please check your info and try again.');
+      console.error("Error creating class:", error);
+      toast.error(
+        "Failed to create class. Please check your info and try again.",
+      );
     }
   };
 
   const handleDeleteClass = async (classId: string) => {
     if (!user) return;
 
-    const classToDelete = classes.find(c => c.id === classId);
+    const classToDelete = classes.find((c) => c.id === classId);
     if (!classToDelete) {
-      toast.error('Class not found.');
+      toast.error("Class not found.");
       return;
     }
 
     const isAdmin = user.isAdmin === true;
     const isHost = classToDelete.instructorId === user.id;
     if (!isAdmin && !isHost) {
-      toast.error('You do not have permission to delete this class.');
+      toast.error("You do not have permission to delete this class.");
       return;
     }
 
     if (isHost) {
       try {
         const { data: blockingBookings, error: bookingsError } = await supabase
-          .from('bookings')
-          .select('id, status')
-          .eq('class_id', classId)
-          .in('status', ['APPROVED', 'PAID']);
+          .from("bookings")
+          .select("id, status")
+          .eq("class_id", classId)
+          .in("status", ["APPROVED", "PAID"]);
 
         if (bookingsError) throw bookingsError;
 
         if (blockingBookings && blockingBookings.length > 0) {
-          toast.warning('You cannot delete this class while it has approved bookings.');
+          toast.warning(
+            "You cannot delete this class while it has approved bookings.",
+          );
           return;
         }
       } catch (error: any) {
-        console.error('Error checking class bookings before deletion:', error?.message || error);
-        toast.error('Unable to verify bookings for this class. Please try again.');
+        console.error(
+          "Error checking class bookings before deletion:",
+          error?.message || error,
+        );
+        toast.error(
+          "Unable to verify bookings for this class. Please try again.",
+        );
         return;
       }
     }
 
     const confirmMessage = isAdmin
-      ? 'Are you sure you want to delete this class? This action cannot be undone and will affect any associated bookings.'
-      : 'Are you sure you want to delete this class? This action cannot be undone.';
+      ? "Are you sure you want to delete this class? This action cannot be undone and will affect any associated bookings."
+      : "Are you sure you want to delete this class? This action cannot be undone.";
     if (!confirm(confirmMessage)) return;
 
     try {
       const { error } = await supabase
-        .from('classes')
+        .from("classes")
         .delete()
-        .eq('id', classId);
+        .eq("id", classId);
 
       if (error) throw error;
 
-      setClasses(prev => {
-        const updated = prev.filter(c => c.id !== classId);
-        cacheData('herd-classes', updated);
+      setClasses((prev) => {
+        const updated = prev.filter((c) => c.id !== classId);
+        cacheData("herd-classes", updated);
         return updated;
       });
 
-      toast.success('Class deleted successfully.');
+      toast.success("Class deleted successfully.");
     } catch (error: any) {
-      console.error('Error deleting class:', error?.message || error);
-      toast.error('Failed to delete class. Please try again.');
+      console.error("Error deleting class:", error?.message || error);
+      toast.error("Failed to delete class. Please try again.");
     }
   };
 
@@ -1186,13 +991,13 @@ export default function App() {
       minimumMaxStudents?: number;
       hasApprovedBookings?: boolean;
       successMessage?: string;
-    } = {}
+    } = {},
   ): Promise<boolean> => {
     if (!user) return false;
 
     const classToUpdate = classes.find((c) => c.id === classId);
     if (!classToUpdate) {
-      toast.error('Class not found.');
+      toast.error("Class not found.");
       return false;
     }
 
@@ -1200,13 +1005,13 @@ export default function App() {
     const isHost = classToUpdate.instructorId === user.id;
 
     if (!isAdmin && !isHost) {
-      toast.error('You do not have permission to edit this class.');
+      toast.error("You do not have permission to edit this class.");
       return false;
     }
 
     const updateKeys = Object.keys(updates);
     if (updateKeys.length === 0) {
-      toast.info('No changes to save.');
+      toast.info("No changes to save.");
       return false;
     }
 
@@ -1219,7 +1024,7 @@ export default function App() {
     }
 
     if (!isAdmin && options.hasApprovedBookings) {
-      const allowedKeys = new Set(['maxStudents']);
+      const allowedKeys = new Set(["maxStudents"]);
       const hasDisallowed =
         updateKeys.some((key) => !allowedKeys.has(key)) ||
         updates.address !== undefined ||
@@ -1239,7 +1044,9 @@ export default function App() {
         updates.auto_approve !== undefined;
 
       if (hasDisallowed) {
-        toast.warning('Once a class has approved bookings, only the maximum number of students can be updated.');
+        toast.warning(
+          "Once a class has approved bookings, only the maximum number of students can be updated.",
+        );
         return false;
       }
     }
@@ -1251,45 +1058,65 @@ export default function App() {
       updateRow.short_summary = updates.shortSummary;
       updateRow.description = updates.shortSummary;
     }
-    if (updates.startDate !== undefined) updateRow.start_date = updates.startDate;
-    if (updates.startTime !== undefined) updateRow.start_time = updates.startTime;
-    if (updates.numberOfDays !== undefined) updateRow.number_of_days = updates.numberOfDays;
+    if (updates.startDate !== undefined)
+      updateRow.start_date = updates.startDate;
+    if (updates.startTime !== undefined)
+      updateRow.start_time = updates.startTime;
+    if (updates.numberOfDays !== undefined)
+      updateRow.number_of_days = updates.numberOfDays;
     if (updates.endDate !== undefined) updateRow.end_date = updates.endDate;
-    if (updates.hoursPerDay !== undefined) updateRow.hours_per_day = updates.hoursPerDay;
-    if (updates.pricePerPerson !== undefined) updateRow.price_per_person_cents = updates.pricePerPerson;
-    if (updates.maxStudents !== undefined) updateRow.max_students = updates.maxStudents;
-    if (updates.minimumAge !== undefined) updateRow.minimum_age = updates.minimumAge;
-    if (updates.instructorBio !== undefined) updateRow.instructor_bio = updates.instructorBio;
+    if (updates.hoursPerDay !== undefined)
+      updateRow.hours_per_day = updates.hoursPerDay;
+    if (updates.pricePerPerson !== undefined)
+      updateRow.price_per_person_cents = updates.pricePerPerson;
+    if (updates.maxStudents !== undefined)
+      updateRow.max_students = updates.maxStudents;
+    if (updates.minimumAge !== undefined)
+      updateRow.minimum_age = updates.minimumAge;
+    if (updates.instructorBio !== undefined)
+      updateRow.instructor_bio = updates.instructorBio;
     if (updates.instructorName !== undefined) {
       updateRow.instructor_name =
-        typeof updates.instructorName === 'string' ? updates.instructorName.trim() : updates.instructorName;
+        typeof updates.instructorName === "string"
+          ? updates.instructorName.trim()
+          : updates.instructorName;
     }
-    if (updates.advisories !== undefined) updateRow.advisories = updates.advisories;
-    if (updates.houseRules !== undefined) updateRow.house_rules = updates.houseRules;
+    if (updates.advisories !== undefined)
+      updateRow.advisories = updates.advisories;
+    if (updates.houseRules !== undefined)
+      updateRow.house_rules = updates.houseRules;
     if (updates.photos !== undefined) updateRow.photos = updates.photos;
-    if (updates.auto_approve !== undefined) updateRow.auto_approve = updates.auto_approve;
+    if (updates.auto_approve !== undefined)
+      updateRow.auto_approve = updates.auto_approve;
     if (updates.address) {
-      if (updates.address.street !== undefined) updateRow.address_street = updates.address.street;
-      if (updates.address.city !== undefined) updateRow.address_city = updates.address.city;
-      if (updates.address.state !== undefined) updateRow.address_state = updates.address.state;
-      if (updates.address.zipCode !== undefined) updateRow.address_zip = updates.address.zipCode;
-      if (updates.address.country !== undefined) updateRow.address_country = updates.address.country;
+      if (updates.address.street !== undefined)
+        updateRow.address_street = updates.address.street;
+      if (updates.address.city !== undefined)
+        updateRow.address_city = updates.address.city;
+      if (updates.address.state !== undefined)
+        updateRow.address_state = updates.address.state;
+      if (updates.address.zipCode !== undefined)
+        updateRow.address_zip = updates.address.zipCode;
+      if (updates.address.country !== undefined)
+        updateRow.address_country = updates.address.country;
     }
 
     if (Object.keys(updateRow).length === 0) {
-      toast.info('No changes detected.');
+      toast.info("No changes detected.");
       return false;
     }
 
     try {
       const { data, error } = await supabase
-        .from('classes')
+        .from("classes")
         .update(updateRow)
-        .eq('id', classId)
-        .select(`
+        .eq("id", classId)
+        .select(
+          `
           *,
           host_profile:profiles!classes_host_id_fkey(full_name, avatar_url, farm_name, bio, rating_average, rating_count)
-        `)
+        `,
+        )
         .single();
 
       if (error) throw error;
@@ -1297,23 +1124,29 @@ export default function App() {
       const updatedClass = applyInstructorFallback(mapClassRowToUI(data), user);
 
       setClasses((prev) => {
-        const updatedList = prev.map((c) => (c.id === classId ? updatedClass : c));
-        cacheData('herd-classes', updatedList);
+        const updatedList = prev.map((c) =>
+          c.id === classId ? updatedClass : c,
+        );
+        cacheData("herd-classes", updatedList);
         return updatedList;
       });
 
-      setSelectedClass((prev) => (prev && prev.id === classId ? updatedClass : prev));
+      setSelectedClass((prev) =>
+        prev && prev.id === classId ? updatedClass : prev,
+      );
 
-      toast.success(options.successMessage ?? 'Class updated successfully.');
+      toast.success(options.successMessage ?? "Class updated successfully.");
       return true;
     } catch (error: any) {
-      console.error('Error updating class:', error?.message || error);
-      toast.error('Failed to update class. Please try again.');
+      console.error("Error updating class:", error?.message || error);
+      toast.error("Failed to update class. Please try again.");
       return false;
     }
   };
 
-  const handleCreatePost = async (postData: Omit<Post, 'id' | 'createdAt' | 'authorId'>) => {
+  const handleCreatePost = async (
+    postData: Omit<Post, "id" | "createdAt" | "authorId">,
+  ) => {
     if (!user) return;
 
     try {
@@ -1326,9 +1159,10 @@ export default function App() {
       };
 
       const { data, error } = await supabase
-        .from('posts')
+        .from("posts")
         .insert([insertRow])
-        .select(`
+        .select(
+          `
           *,
           author_profile:profiles!posts_user_id_fkey(
             id,
@@ -1336,7 +1170,8 @@ export default function App() {
             email,
             avatar_url
           )
-        `)
+        `,
+        )
         .single();
 
       if (error) throw error;
@@ -1347,48 +1182,45 @@ export default function App() {
       saved.authorEmail = user.email;
       saved.category = postData.category;
 
-      setPosts(prev => {
+      setPosts((prev) => {
         const updated = [saved, ...prev];
-        cacheData('herd-posts', updated);
+        cacheData("herd-posts", updated);
         return updated;
       });
     } catch (error: any) {
-      console.error('Error creating post:', error?.message || error);
-      toast.error('Failed to create post. Please try again.');
+      console.error("Error creating post:", error?.message || error);
+      toast.error("Failed to create post. Please try again.");
     }
   };
 
-const handleDeletePost = async (postId: string) => {
-  if (!user) return;
+  const handleDeletePost = async (postId: string) => {
+    if (!user) return;
 
-  try {
-    const { error } = await supabase
-        .from('posts')
-        .delete()
-        .eq('id', postId);
+    try {
+      const { error } = await supabase.from("posts").delete().eq("id", postId);
 
       if (error) throw error;
 
-      setPosts(prev => {
-        const updated = prev.filter(post => post.id !== postId);
-        cacheData('herd-posts', updated);
+      setPosts((prev) => {
+        const updated = prev.filter((post) => post.id !== postId);
+        cacheData("herd-posts", updated);
         return updated;
       });
 
       if (selectedPost?.id === postId) {
         setSelectedPost(null);
-        setCurrentPage('bulletin');
+        setCurrentPage("bulletin");
       }
     } catch (error: any) {
-      console.error('Error deleting post:', error?.message || error);
-      toast.error('Failed to delete post. Please try again.');
+      console.error("Error deleting post:", error?.message || error);
+      toast.error("Failed to delete post. Please try again.");
     }
   };
 
-const handleUpdatePost = async (
-  postId: string,
-  updates: { title: string; content: string; category: string }
-): Promise<boolean> => {
+  const handleUpdatePost = async (
+    postId: string,
+    updates: { title: string; content: string; category: string },
+  ): Promise<boolean> => {
     if (!user) {
       setShowAuthModal(true);
       return false;
@@ -1396,14 +1228,15 @@ const handleUpdatePost = async (
 
     try {
       const { data, error } = await supabase
-        .from('posts')
+        .from("posts")
         .update({
           title: updates.title,
           content: updates.content,
           category: updates.category,
         })
-        .eq('id', postId)
-        .select(`
+        .eq("id", postId)
+        .select(
+          `
           *,
           author_profile:profiles!posts_user_id_fkey(
             id,
@@ -1411,7 +1244,8 @@ const handleUpdatePost = async (
             email,
             avatar_url
           )
-        `)
+        `,
+        )
         .single();
 
       if (error) throw error;
@@ -1426,16 +1260,16 @@ const handleUpdatePost = async (
 
       setPosts((prev) => {
         const next = prev.map((post) => (post.id === postId ? updated : post));
-        cacheData('herd-posts', next);
+        cacheData("herd-posts", next);
         return next;
       });
 
       setSelectedPost((prev) => (prev && prev.id === postId ? updated : prev));
-      toast.success('Bulletin updated.');
+      toast.success("Bulletin updated.");
       return true;
     } catch (error: any) {
-      console.error('Error updating post:', error?.message || error);
-      toast.error('Failed to update bulletin. Please try again.');
+      console.error("Error updating post:", error?.message || error);
+      toast.error("Failed to update bulletin. Please try again.");
       return false;
     }
   };
@@ -1447,13 +1281,15 @@ const handleUpdatePost = async (
     }
 
     if (!emailVerified) {
-      toast.warning('Please verify your email address before relaunching classes.');
+      toast.warning(
+        "Please verify your email address before relaunching classes.",
+      );
       return;
     }
 
     if (!user.stripeConnected) {
-      toast.warning('Connect your Stripe account to relaunch a class.');
-      setCurrentPage('profile');
+      toast.warning("Connect your Stripe account to relaunch a class.");
+      setCurrentPage("profile");
       return;
     }
 
@@ -1462,16 +1298,17 @@ const handleUpdatePost = async (
         ? Math.trunc(classData.numberOfDays)
         : 1;
 
-    const instructorNameRaw = (classData.instructorName ?? '').trim();
-    const fallbackInstructor = instructorNameRaw || user.name || '';
-    const fallbackHostName = (classData.hostName ?? '').trim() || fallbackInstructor;
+    const instructorNameRaw = (classData.instructorName ?? "").trim();
+    const fallbackInstructor = instructorNameRaw || user.name || "";
+    const fallbackHostName =
+      (classData.hostName ?? "").trim() || fallbackInstructor;
 
     const template: Class = {
       ...classData,
-      id: '',
-      startDate: '',
-      endDate: '',
-      startTime: '',
+      id: "",
+      startDate: "",
+      endDate: "",
+      startTime: "",
       numberOfDays: normalizedNumberOfDays,
       hostId: user.id,
       host_id: user.id,
@@ -1481,20 +1318,22 @@ const handleUpdatePost = async (
       photos: Array.isArray(classData.photos) ? [...classData.photos] : [],
       auto_approve: !!classData.auto_approve,
       address: {
-        street: classData.address?.street ?? '',
-        city: classData.address?.city ?? '',
-        state: classData.address?.state ?? '',
-        zipCode: classData.address?.zipCode ?? '',
-        country: classData.address?.country ?? '',
+        street: classData.address?.street ?? "",
+        city: classData.address?.city ?? "",
+        state: classData.address?.state ?? "",
+        zipCode: classData.address?.zipCode ?? "",
+        country: classData.address?.country ?? "",
       },
       hostProfile: null,
       createdAt: new Date().toISOString(),
     };
 
     setClassFormInitialData(template);
-    setClassFormMode('relaunch');
-    setCurrentPage('create-class');
-    toast.info('Copied your class details. Pick a new future date and time, then save to relaunch.');
+    setClassFormMode("relaunch");
+    setCurrentPage("create-class");
+    toast.info(
+      "Copied your class details. Pick a new future date and time, then save to relaunch.",
+    );
   };
 
   const toggleFavoriteClass = async (classId: string) => {
@@ -1507,24 +1346,24 @@ const handleUpdatePost = async (
     try {
       if (isFavorite) {
         const { error } = await supabase
-          .from('favorites')
+          .from("favorites")
           .delete()
-          .eq('user_id', user.id)
-          .eq('class_id', classId);
+          .eq("user_id", user.id)
+          .eq("class_id", classId);
         if (error) throw error;
         setFavoriteClassIds((prev) => prev.filter((id) => id !== classId));
-        toast.success('Removed from favorites.');
+        toast.success("Removed from favorites.");
       } else {
         const { error } = await supabase
-          .from('favorites')
+          .from("favorites")
           .insert({ user_id: user.id, class_id: classId });
         if (error) throw error;
         setFavoriteClassIds((prev) => [...prev, classId]);
-        toast.success('Added to favorites.');
+        toast.success("Added to favorites.");
       }
     } catch (error: any) {
-      console.error('Error toggling favorite:', error?.message || error);
-      toast.error('Unable to update favorites right now.');
+      console.error("Error toggling favorite:", error?.message || error);
+      toast.error("Unable to update favorites right now.");
     }
   };
 
@@ -1552,7 +1391,7 @@ const handleUpdatePost = async (
     try {
       await supabase.auth.signOut();
     } catch (error) {
-      console.error('Error ending password recovery session:', error);
+      console.error("Error ending password recovery session:", error);
     }
   };
 
@@ -1587,9 +1426,7 @@ const handleUpdatePost = async (
       createdAt: base.createdAt || new Date().toISOString(),
       id: updated?.id ?? base.id,
       isAdmin:
-        typeof updated?.isAdmin === "boolean"
-          ? updated.isAdmin
-          : base.isAdmin,
+        typeof updated?.isAdmin === "boolean" ? updated.isAdmin : base.isAdmin,
     };
 
     setUser(normalized);
@@ -1598,29 +1435,33 @@ const handleUpdatePost = async (
     } catch {}
   };
 
-
   const handleSignOut = async () => {
     try {
       try {
-        localStorage.removeItem('herd-classes');
-        localStorage.removeItem('herd-posts');
-        localStorage.removeItem('herd-user');
-        localStorage.removeItem('herd-dashboard-visited');
-        localStorage.removeItem('herd-conversations');
+        localStorage.removeItem("herd-classes");
+        localStorage.removeItem("herd-posts");
+        localStorage.removeItem("herd-user");
+        localStorage.removeItem("herd-dashboard-visited");
+        localStorage.removeItem("herd-conversations");
       } catch {}
 
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (session) {
         const { error } = await supabase.auth.signOut();
-        if (error && !/AuthSessionMissingError|session missing/i.test(error.message)) {
-          console.error('Sign out error:', error);
+        if (
+          error &&
+          !/AuthSessionMissingError|session missing/i.test(error.message)
+        ) {
+          console.error("Sign out error:", error);
         }
       }
 
       setUser(null);
       setAuthSession(null);
       setEmailVerified(true);
-      setCurrentPage('home');
+      setCurrentPage("home");
       setClasses([]);
       setPosts([]);
       setDataLoaded(false);
@@ -1629,11 +1470,11 @@ const handleUpdatePost = async (
       setSelectedClass(null);
       setSelectedHostId(null);
     } catch (error) {
-      console.error('Unexpected error during sign out:', error);
+      console.error("Unexpected error during sign out:", error);
       setUser(null);
       setAuthSession(null);
       setEmailVerified(true);
-      setCurrentPage('home');
+      setCurrentPage("home");
       setClasses([]);
       setPosts([]);
       setDataLoaded(false);
@@ -1648,7 +1489,9 @@ const handleUpdatePost = async (
     if (!user) {
       setShowAuthModal(true);
     } else if (!emailVerified) {
-      toast.warning('Please verify your email address before continuing. Check your inbox for a verification link.');
+      toast.warning(
+        "Please verify your email address before continuing. Check your inbox for a verification link.",
+      );
     } else {
       action();
     }
@@ -1658,10 +1501,14 @@ const handleUpdatePost = async (
     if (!user) {
       setShowAuthModal(true);
     } else if (!emailVerified) {
-      toast.warning('Please verify your email address before creating classes. Check your inbox for a verification link.');
+      toast.warning(
+        "Please verify your email address before creating classes. Check your inbox for a verification link.",
+      );
     } else if (!user.stripeConnected) {
-      toast.warning('You need to connect your Stripe account before creating classes. Please complete your profile setup.');
-      setCurrentPage('profile');
+      toast.warning(
+        "You need to connect your Stripe account before creating classes. Please complete your profile setup.",
+      );
+      setCurrentPage("profile");
     } else {
       action();
     }
@@ -1681,9 +1528,15 @@ const handleUpdatePost = async (
     }
 
     switch (currentPage) {
-      case 'home':
-        return <HomePage onNavigate={setCurrentPage} user={user} onRequireAuth={() => setShowAuthModal(true)} />;
-      case 'classes':
+      case "home":
+        return (
+          <HomePage
+            onNavigate={setCurrentPage}
+            user={user}
+            onRequireAuth={() => setShowAuthModal(true)}
+          />
+        );
+      case "classes":
         return (
           <ClassListing
             classes={classes}
@@ -1693,13 +1546,13 @@ const handleUpdatePost = async (
             onSelectClass={(classData) => {
               setSelectedClass(classData);
               setSelectedHostId(classData.instructorId ?? null);
-              setCurrentPage('class-detail');
+              setCurrentPage("class-detail");
             }}
             favorites={favoriteClassIds}
             onToggleFavorite={toggleFavoriteClass}
           />
         );
-      case 'class-detail':
+      case "class-detail":
         return selectedClass ? (
           <ClassDetail
             classData={selectedClass}
@@ -1709,13 +1562,13 @@ const handleUpdatePost = async (
             onViewHost={(hostId, classInfo) => {
               setSelectedHostId(hostId);
               setSelectedClass(classInfo);
-              setCurrentPage('host-profile');
+              setCurrentPage("host-profile");
             }}
             favorites={favoriteClassIds}
             onToggleFavorite={toggleFavoriteClass}
             onOpenConversation={(conversationId, classInfo) => {
               setDashboardLink({
-                tab: 'messages',
+                tab: "messages",
                 conversationId,
                 guestId: user?.id ?? null,
                 guestName: user?.name ?? null,
@@ -1723,13 +1576,13 @@ const handleUpdatePost = async (
                 classTitle: classInfo.title,
                 bookingId: null,
                 consumed: false,
-                role: 'guest',
+                role: "guest",
               });
-              setCurrentPage('dashboard');
+              setCurrentPage("dashboard");
             }}
           />
         ) : null;
-      case 'host-profile':
+      case "host-profile":
         return selectedHostId ? (
           <HostProfilePage
             hostId={selectedHostId}
@@ -1738,44 +1591,52 @@ const handleUpdatePost = async (
             onSelectClass={(classData) => {
               setSelectedClass(classData);
               setSelectedHostId(classData.instructorId ?? null);
-              setCurrentPage('class-detail');
+              setCurrentPage("class-detail");
             }}
           />
         ) : (
-          <HomePage onNavigate={setCurrentPage} user={user} onRequireAuth={() => setShowAuthModal(true)} />
+          <HomePage
+            onNavigate={setCurrentPage}
+            user={user}
+            onRequireAuth={() => setShowAuthModal(true)}
+          />
         );
-      case 'create-class': {
+      case "create-class": {
         if (!user) {
           setShowAuthModal(true);
           setClassFormInitialData(null);
-          setClassFormMode('create');
-          setCurrentPage('home');
+          setClassFormMode("create");
+          setCurrentPage("home");
           return null;
         }
 
         if (!emailVerified) {
-          toast.warning('Please verify your email address before creating classes. Check your inbox for a verification link.');
+          toast.warning(
+            "Please verify your email address before creating classes. Check your inbox for a verification link.",
+          );
           setClassFormInitialData(null);
-          setClassFormMode('create');
-          setCurrentPage('home');
+          setClassFormMode("create");
+          setCurrentPage("home");
           return null;
         }
 
         if (!user.stripeConnected) {
-          toast.warning('You need to connect your Stripe account before creating classes. Please complete your profile setup.');
+          toast.warning(
+            "You need to connect your Stripe account before creating classes. Please complete your profile setup.",
+          );
           setClassFormInitialData(null);
-          setClassFormMode('create');
-          setCurrentPage('profile');
+          setClassFormMode("create");
+          setCurrentPage("profile");
           return null;
         }
 
         const handleCreateCancel = () => {
           setClassFormInitialData(null);
-          if (classFormMode === 'relaunch') {
-            setClassFormMode('create');
-            setCurrentPage('dashboard');
+          if (classFormMode === "relaunch") {
+            setClassFormMode("create");
+            setCurrentPage("dashboard");
           } else {
-            setCurrentPage('classes');
+            setCurrentPage("classes");
           }
         };
 
@@ -1785,21 +1646,21 @@ const handleUpdatePost = async (
             onCancel={handleCreateCancel}
             user={user}
             initialData={classFormInitialData}
-            mode={classFormMode === 'relaunch' ? 'relaunch' : 'create'}
+            mode={classFormMode === "relaunch" ? "relaunch" : "create"}
           />
         );
       }
-      case 'edit-class':
+      case "edit-class":
         return user && selectedClass ? (
           <ClassForm
             onSubmit={handleSubmitEditedClass}
-            onCancel={() => setCurrentPage('manage-class')}
+            onCancel={() => setCurrentPage("manage-class")}
             user={user}
             initialData={{ ...selectedClass }}
             mode="edit"
           />
         ) : null;
-      case 'bulletin':
+      case "bulletin":
         return (
           <BulletinBoard
             posts={posts}
@@ -1807,18 +1668,18 @@ const handleUpdatePost = async (
             onDeletePost={handleDeletePost}
             onSelectPost={(post) => {
               setSelectedPost(post);
-              setCurrentPage('bulletin-detail');
+              setCurrentPage("bulletin-detail");
             }}
             user={user}
             onRequireAuth={() => setShowAuthModal(true)}
           />
         );
-      case 'bulletin-detail':
+      case "bulletin-detail":
         return selectedPost ? (
           <BulletinDetail
             post={selectedPost}
             user={user}
-            onBack={() => setCurrentPage('bulletin')}
+            onBack={() => setCurrentPage("bulletin")}
             onDeletePost={(postId) => handleDeletePost(postId)}
             onRequireAuth={() => setShowAuthModal(true)}
             onUpdatePost={handleUpdatePost}
@@ -1830,18 +1691,18 @@ const handleUpdatePost = async (
             onDeletePost={handleDeletePost}
             onSelectPost={(post) => {
               setSelectedPost(post);
-              setCurrentPage('bulletin-detail');
+              setCurrentPage("bulletin-detail");
             }}
             user={user}
             onRequireAuth={() => setShowAuthModal(true)}
           />
         );
-      case 'profile':
+      case "profile":
         return user ? (
           // NOTE: simplified props to match your lean ProfilePage
           <ProfilePage user={user} onUpdate={handleProfileUpdate} />
         ) : null;
-      case 'dashboard':
+      case "dashboard":
         return user ? (
           <Dashboard
             user={user}
@@ -1852,26 +1713,40 @@ const handleUpdatePost = async (
             onManageClass={(classData) => {
               setSelectedClass(classData);
               setSelectedHostId(classData.instructorId ?? null);
-              setCurrentPage('manage-class');
+              setCurrentPage("manage-class");
             }}
             onSelectClass={(classData) => {
               setSelectedClass(classData);
               setSelectedHostId(classData.instructorId ?? null);
-              setCurrentPage('class-detail');
+              setCurrentPage("class-detail");
             }}
-            initialTab={!dashboardLink?.consumed ? dashboardLink?.tab ?? null : null}
-            initialConversationId={!dashboardLink?.consumed ? dashboardLink?.conversationId ?? null : null}
-            initialMode={!dashboardLink?.consumed ? (dashboardLink?.role === 'host' ? 'host' : dashboardLink?.role === 'guest' ? 'guest' : null) : null}
+            initialTab={
+              !dashboardLink?.consumed ? (dashboardLink?.tab ?? null) : null
+            }
+            initialConversationId={
+              !dashboardLink?.consumed
+                ? (dashboardLink?.conversationId ?? null)
+                : null
+            }
+            initialMode={
+              !dashboardLink?.consumed
+                ? dashboardLink?.role === "host"
+                  ? "host"
+                  : dashboardLink?.role === "guest"
+                    ? "guest"
+                    : null
+                : null
+            }
             favorites={favoriteClassIds}
             onToggleFavorite={toggleFavoriteClass}
             onRelaunchClass={handleRelaunchClass}
             onDeletePost={handleDeletePost}
             onSelectPost={(post) => {
               setSelectedPost(post);
-              setCurrentPage('bulletin-detail');
+              setCurrentPage("bulletin-detail");
             }}
             hostMessageTarget={
-              user.stripeConnected && dashboardLink?.role === 'host'
+              user.stripeConnected && dashboardLink?.role === "host"
                 ? {
                     conversationId: dashboardLink?.conversationId ?? null,
                     guestId: dashboardLink?.guestId ?? null,
@@ -1884,7 +1759,7 @@ const handleUpdatePost = async (
             }
           />
         ) : null;
-      case 'manage-class':
+      case "manage-class":
         return user && selectedClass ? (
           <ClassManagement
             classData={selectedClass}
@@ -1894,34 +1769,49 @@ const handleUpdatePost = async (
             onEditClass={(classData) => {
               setSelectedClass(classData);
               setSelectedHostId(classData.instructorId ?? null);
-              setCurrentPage('edit-class');
+              setCurrentPage("edit-class");
             }}
             onUpdateClass={handleUpdateClass}
           />
         ) : null;
       default:
-        return <HomePage onNavigate={setCurrentPage} user={user} onRequireAuth={() => setShowAuthModal(true)} />;
+        return (
+          <HomePage
+            onNavigate={setCurrentPage}
+            user={user}
+            onRequireAuth={() => setShowAuthModal(true)}
+          />
+        );
     }
   };
 
-  const pathname = typeof window !== 'undefined' ? window.location.pathname : '/';
-  if (pathname.startsWith('/classes/checkout/success')) {
+  const pathname =
+    typeof window !== "undefined" ? window.location.pathname : "/";
+  if (pathname.startsWith("/classes/checkout/success")) {
     return (
-      <Suspense fallback={<CheckoutRouteFallback message="Preparing your confirmation..." />}>
+      <Suspense
+        fallback={
+          <CheckoutRouteFallback message="Preparing your confirmation..." />
+        }
+      >
         <CheckoutSuccessPage />
       </Suspense>
     );
   }
 
-  if (pathname.startsWith('/classes/checkout/cancel')) {
+  if (pathname.startsWith("/classes/checkout/cancel")) {
     return (
-      <Suspense fallback={<CheckoutRouteFallback message="Loading checkout status..." />}>
+      <Suspense
+        fallback={
+          <CheckoutRouteFallback message="Loading checkout status..." />
+        }
+      >
         <CheckoutCancelPage />
       </Suspense>
     );
   }
 
-  if (pathname.startsWith('/review')) {
+  if (pathname.startsWith("/review")) {
     return (
       <div className="min-h-screen bg-[#f8f9f6]">
         <ReviewHost />
@@ -1934,13 +1824,13 @@ const handleUpdatePost = async (
       <Navigation
         currentPage={currentPage}
         onNavigate={(page) => {
-          if (page === 'create-class') {
+          if (page === "create-class") {
             requireStripe(() => {
               setClassFormInitialData(null);
-              setClassFormMode('create');
+              setClassFormMode("create");
               setCurrentPage(page);
             });
-          } else if (page === 'profile' || page === 'dashboard') {
+          } else if (page === "profile" || page === "dashboard") {
             requireAuth(() => setCurrentPage(page));
           } else {
             setCurrentPage(page);
@@ -1952,12 +1842,17 @@ const handleUpdatePost = async (
       />
 
       {/* Email Verification Banner */}
-      {user && !emailVerified && <EmailVerificationBanner userEmail={authSession?.user?.email} />}
+      {user && !emailVerified && (
+        <EmailVerificationBanner userEmail={authSession?.user?.email} />
+      )}
 
       {renderPage()}
 
       {showAuthModal && (
-        <AuthModal onClose={() => setShowAuthModal(false)} onSuccess={handleAuthSuccess} />
+        <AuthModal
+          onClose={() => setShowAuthModal(false)}
+          onSuccess={handleAuthSuccess}
+        />
       )}
 
       {showResetPasswordModal && (
@@ -1969,7 +1864,10 @@ const handleUpdatePost = async (
       )}
 
       {showOnboarding && authSession && emailVerified && (
-        <OnboardingModal onComplete={handleOnboardingComplete} authSession={authSession} />
+        <OnboardingModal
+          onComplete={handleOnboardingComplete}
+          authSession={authSession}
+        />
       )}
 
       <Toaster position="top-right" richColors closeButton />

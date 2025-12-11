@@ -4,7 +4,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { X, Eye, EyeOff, Check, AlertCircle } from "lucide-react";
-import { supabase } from "../utils/supabaseClient";
+import { supabase } from "@/utils/supabaseClient";
 import { toast } from "sonner";
 import { ensureProfilePatched, formatAuthError } from "@/utils/auth";
 

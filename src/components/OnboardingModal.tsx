@@ -3,7 +3,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { supabase } from "../utils/supabaseClient";
+import { supabase } from "@/utils/supabaseClient";
 import type { User } from "../types/domain";
 
 type OnboardingModalProps = {

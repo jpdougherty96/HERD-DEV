@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Camera, X, User } from "lucide-react";
 import { ProfilePicturePicker } from "./ProfilePicturePicker";
-import { supabase } from "../utils/supabaseClient";
+import { supabase } from "@/utils/supabaseClient";
 import { toast } from "sonner";
 
 

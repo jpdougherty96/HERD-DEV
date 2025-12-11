@@ -4,7 +4,7 @@ import { HostDashboard } from "./HostDashboard";
 import { UserDashboard } from "./UserDashboard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Calendar, MessageSquare, Star, BookOpen, Megaphone } from "lucide-react";
-import { supabase } from "../utils/supabaseClient";
+import { supabase } from "@/utils/supabaseClient";
 import { Toaster, toast } from "sonner";
 import { Switch } from "./ui/switch";
 

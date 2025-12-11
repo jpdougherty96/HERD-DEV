@@ -14,7 +14,7 @@ import { EmailVerificationBanner } from "./components/EmailVerificationBanner";
 import { ProfilePage } from "./components/ProfilePage";
 import { Dashboard } from "./components/Dashboard";
 import { ClassManagement } from "./components/ClassManagement";
-import { supabase } from "./utils/supabaseClient";
+import { supabase } from "@/utils/supabaseClient";
 import { Toaster } from "./components/ui/sonner";
 import { toast } from "sonner@2.0.3";
 import { normalizeToCents, resolvePriceCentsFromRow } from "./utils/money";
@@ -35,7 +35,7 @@ import type {
   Page,
   Post,
   User,
-} from "./types/domain";
+} from "@/types/domain";
 
 const GUEST_DASHBOARD_TAB_PATHS = {
   overview: "",

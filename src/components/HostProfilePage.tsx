@@ -3,7 +3,7 @@ import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { Calendar, Clock, Users, ArrowLeft } from "lucide-react";
-import { supabase } from "../utils/supabaseClient";
+import { supabase } from "@/utils/supabaseClient";
 import type { Class, Page, User } from "../types/domain";
 import {
   formatDateRangeDisplay,

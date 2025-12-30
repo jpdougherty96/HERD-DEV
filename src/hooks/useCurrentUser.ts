@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/utils/supabaseClient";
 import type { User } from "@/types/domain";
 
@@ -17,11 +17,29 @@ const mapProfileRowToUser = (row: any): User => ({
 
 export function useCurrentUser() {
   const [user, setUser] = useState<User | null>(null);
+  const userRef = useRef<User | null>(null);
   const [authSession, setAuthSession] = useState<any | undefined>(undefined);
   const [emailVerified, setEmailVerified] = useState(true);
   const [recoveryEmail, setRecoveryEmail] = useState<string | null>(null);
   const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
   const [loading, setLoading] = useState(true);
+  const initializedRef = useRef(false);
+
+  const updateUserIfChanged = (next: User | null) => {
+    const prev = userRef.current;
+    const changed =
+      !prev ||
+      prev.id !== next?.id ||
+      prev.name !== next?.name ||
+      prev.email !== next?.email ||
+      prev.stripeConnected !== next?.stripeConnected ||
+      prev.isAdmin !== next?.isAdmin ||
+      prev.profilePicture !== next?.profilePicture;
+    if (changed) {
+      setUser(next);
+      userRef.current = next;
+    }
+  };
 
   const loadUserProfile = useCallback(async (userId: string, retryCount = 0) => {
     const maxRetries = 1;
@@ -43,7 +61,7 @@ export function useCurrentUser() {
       }
 
       const uiUser = mapProfileRowToUser(data);
-      setUser(uiUser);
+      updateUserIfChanged(uiUser);
       setLoading(false);
       return uiUser;
     } catch (error: any) {
@@ -64,7 +82,7 @@ export function useCurrentUser() {
           stripeConnected: false,
           createdAt: new Date().toISOString(),
         };
-        setUser(fallbackUser);
+        updateUserIfChanged(fallbackUser);
       }
 
       setLoading(false);
@@ -73,6 +91,9 @@ export function useCurrentUser() {
   }, [authSession?.user]);
 
   useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
     let mounted = true;
 
     const globalSafetyTimeout = setTimeout(() => {
@@ -151,7 +172,7 @@ export function useCurrentUser() {
         setRecoveryEmail(null);
         loadUserProfile(session.user.id, 0);
       } else if (event === "SIGNED_OUT") {
-        setUser(null);
+        updateUserIfChanged(null);
         setEmailVerified(true);
         setLoading(false);
         setShowResetPasswordModal(false);
@@ -168,7 +189,7 @@ export function useCurrentUser() {
 
   return {
     user,
-    setUser,
+    setUser: updateUserIfChanged,
     authSession,
     setAuthSession,
     emailVerified,

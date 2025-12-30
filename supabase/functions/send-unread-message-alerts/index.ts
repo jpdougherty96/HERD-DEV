@@ -1,22 +1,19 @@
 import { serve } from "https://deno.land/std/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeaders, handleCors } from "../_shared/cors.ts";
+import { requireInternal } from "../_shared/internal.ts";
+import { createAdminClient } from "../_shared/supabase.ts";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const HERD_BASE_URL = (Deno.env.get("HERD_BASE_URL") || "https://herd.co").replace(/\/$/, "");
 
-const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const admin = createAdminClient();
 
 serve(async (_req: Request) => {
-  if (_req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: corsHeaders });
-  }
+  const cors = corsHeaders(_req, "GET, POST, OPTIONS");
+  const preflight = handleCors(_req, "GET, POST, OPTIONS");
+  if (preflight) return preflight;
+
+  const unauthorized = requireInternal(_req, cors);
+  if (unauthorized) return unauthorized;
 
   try {
     const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000);
@@ -48,7 +45,7 @@ serve(async (_req: Request) => {
     if (conversationsErr) throw conversationsErr;
 
     if (!conversations?.length) {
-      return new Response("No alerts queued", { status: 200, headers: corsHeaders });
+      return new Response("No alerts queued", { status: 200, headers: cors });
     }
 
     const { data: participants, error: participantsErr } = await admin
@@ -122,7 +119,7 @@ serve(async (_req: Request) => {
     });
 
     if (!recipients.length) {
-      return new Response("No alerts queued", { status: 200, headers: corsHeaders });
+      return new Response("No alerts queued", { status: 200, headers: cors });
     }
 
     let queued = 0;
@@ -161,9 +158,9 @@ serve(async (_req: Request) => {
       queued++;
     }
 
-    return new Response(`Alerts queued: ${queued}`, { status: 200, headers: corsHeaders });
+    return new Response(`Alerts queued: ${queued}`, { status: 200, headers: cors });
   } catch (err) {
     console.error("[send-unread-message-alerts]", err);
-    return new Response("Error", { status: 500, headers: corsHeaders });
+    return new Response("Error", { status: 500, headers: cors });
   }
 });

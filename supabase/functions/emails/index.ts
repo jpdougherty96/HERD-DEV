@@ -4,6 +4,8 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Resend } from "https://esm.sh/resend@3.2.0";
+import { corsHeaders, handleCors } from "../_shared/cors.ts";
+import { requireInternal } from "../_shared/internal.ts";
 
 // Setup clients
 const supabase = createClient(
@@ -15,11 +17,6 @@ const resend = new Resend(Deno.env.get("RESEND_API_KEY")!);
 const BASE_URL = (Deno.env.get("SITE_URL") ?? "https://herdstaging.dev").replace(/\/+$/, "");
 const MAX_ATTEMPTS = Number.parseInt(Deno.env.get("EMAILS_MAX_ATTEMPTS") ?? "5", 10) || 5;
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, content-type, apikey, x-client-info",
-};
 
 // Allowed email types
 type EmailType =
@@ -382,9 +379,12 @@ async function processQueuedJobs(limit = 25) {
 
 // Supabase handler
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: CORS_HEADERS });
-  }
+  const cors = corsHeaders(req, "GET, POST, OPTIONS");
+  const preflight = handleCors(req, "GET, POST, OPTIONS");
+  if (preflight) return preflight;
+
+  const unauthorized = requireInternal(req, cors);
+  if (unauthorized) return unauthorized;
 
   if (req.method === "POST") {
     let body: Record<string, unknown> = {};
@@ -401,21 +401,21 @@ serve(async (req) => {
       if (!isEmailType(rawType)) {
         return new Response(JSON.stringify({ error: "Unsupported email type" }), {
           status: 400,
-          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+          headers: { ...cors, "Content-Type": "application/json" },
         });
       }
 
       try {
         const result = await sendEmail(to, rawType, normalizeVars(body.vars));
         return new Response(JSON.stringify({ ok: true, result }), {
-          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+          headers: { ...cors, "Content-Type": "application/json" },
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error("[emails] direct send failed", err);
         return new Response(JSON.stringify({ error: message }), {
           status: 500,
-          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+          headers: { ...cors, "Content-Type": "application/json" },
         });
       }
     }
@@ -426,19 +426,19 @@ serve(async (req) => {
         : undefined;
       const summary = await processQueuedJobs(limit);
       return new Response(JSON.stringify({ ok: true, ...summary }), {
-        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("[emails] queue processing error", err);
       return new Response(JSON.stringify({ error: message }), {
         status: 500,
-        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
   }
 
   return new Response(JSON.stringify({ ok: true, service: "emails" }), {
-    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+    headers: { ...cors, "Content-Type": "application/json" },
   });
 });

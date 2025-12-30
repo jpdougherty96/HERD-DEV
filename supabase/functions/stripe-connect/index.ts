@@ -1,28 +1,49 @@
 // Creates (or reuses) an Express account, stores it on profile, returns onboarding link URL
 import Stripe from "https://esm.sh/stripe@16.11.0?target=deno";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requireAuth } from "../_shared/auth.ts";
+import { corsHeaders, handleCors } from "../_shared/cors.ts";
+import { createAdminClient } from "../_shared/supabase.ts";
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, { apiVersion: "2024-06-20" });
-const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const supabase = createAdminClient();
 
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
-  if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: corsHeaders });
+  const cors = corsHeaders(req, "POST, OPTIONS");
+  const preflight = handleCors(req, "POST, OPTIONS");
+  if (preflight) return preflight;
+  if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: cors });
 
   try {
+    const auth = await requireAuth(req);
+    if ("error" in auth) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...cors, "Content-Type": "application/json" },
+      });
+    }
+
     const { userId } = await req.json();
-    if (!userId) {
-      return new Response(JSON.stringify({ error: "Missing userId" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    if (userId && userId !== auth.user.id) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { ...cors, "Content-Type": "application/json" },
+      });
+    }
+
+    const authedUserId = auth.user.id;
+    if (!authedUserId) {
+      return new Response(JSON.stringify({ error: "Missing userId" }), {
+        status: 400,
+        headers: { ...cors, "Content-Type": "application/json" },
+      });
     }
 
     // Load profile to see if account already exists
-    const { data: prof, error: pErr } = await supabase.from("profiles").select("id, stripe_account_id").eq("id", userId).single();
+    const { data: prof, error: pErr } = await supabase
+      .from("profiles")
+      .select("id, stripe_account_id")
+      .eq("id", authedUserId)
+      .single();
     if (pErr || !prof) throw pErr || new Error("Profile not found");
 
     let accountId = prof.stripe_account_id as string | null;
@@ -34,19 +55,19 @@ Deno.serve(async (req: Request) => {
           card_payments: { requested: true },
           transfers: { requested: true },
         },
-        metadata: { supabase_user_id: userId },
+        metadata: { supabase_user_id: authedUserId },
       });
       accountId = acct.id;
 
       const { error: uErr } = await supabase
         .from("profiles")
         .update({ stripe_account_id: accountId, updated_at: new Date().toISOString() })
-        .eq("id", userId);
+        .eq("id", authedUserId);
       if (uErr) throw uErr;
     } else {
       // Make sure metadata is present for fallback
       await stripe.accounts.update(accountId, {
-        metadata: { supabase_user_id: userId },
+        metadata: { supabase_user_id: authedUserId },
       });
     }
 
@@ -71,7 +92,7 @@ Deno.serve(async (req: Request) => {
           stripe_account_id: accountId,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", userId);
+        .eq("id", authedUserId);
 
       console.log(
         `[stripe-connect] Synced account ${accountId} (details=${detailsSubmitted}, charges=${chargesEnabled}, payouts=${payoutsEnabled})`,
@@ -81,13 +102,13 @@ Deno.serve(async (req: Request) => {
     }
 
     return new Response(JSON.stringify({ url: link.url, accountId }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...cors, "Content-Type": "application/json" },
     });
   } catch (e) {
     console.error("[stripe-connect] error:", e);
     return new Response(JSON.stringify({ error: "server_error" }), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...cors, "Content-Type": "application/json" },
     });
   }
 });

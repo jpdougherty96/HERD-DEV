@@ -27,6 +27,7 @@ import {
   useClasses,
 } from "@/hooks/useClasses";
 import { resolveInitialPage } from "@/utils/routing";
+import { Spinner } from "@/components/Spinner";
 import type {
   Class,
   GuestDashboardDeepLink,
@@ -231,7 +232,13 @@ export default function App() {
     setLoading,
     loadUserProfile,
   } = useCurrentUser();
-  const { classes, setClasses, refresh: refreshClasses } = useClasses(user);
+  const {
+    classes,
+    setClasses,
+    loading: classesLoading,
+    error: classesError,
+    refresh: refreshClasses,
+  } = useClasses(user);
   const [currentPage, setCurrentPage] = useState<Page>(() =>
     typeof window !== "undefined"
       ? resolveInitialPage(window.location.pathname)
@@ -1515,18 +1522,6 @@ export default function App() {
   };
 
   const renderPage = () => {
-    if (loading) {
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-[#f8f9f6]">
-          <div className="text-center max-w-md mx-auto p-6">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#556B2F] mx-auto mb-4"></div>
-            <h2 className="text-[#3c4f21] mb-2">Loading HERD</h2>
-            <p className="text-[#556B2F] text-sm mb-4">{loadingMessage}</p>
-          </div>
-        </div>
-      );
-    }
-
     switch (currentPage) {
       case "home":
         return (
@@ -1537,7 +1532,17 @@ export default function App() {
           />
         );
       case "classes":
-        return (
+        return classesLoading ? (
+          <div className="flex justify-center items-center py-16">
+            <Spinner size="lg" />
+          </div>
+        ) : classesError ? (
+          <div className="max-w-4xl mx-auto px-4 py-4">
+            <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-red-800">
+              Error loading classes: {classesError.message || "Unknown error"}
+            </div>
+          </div>
+        ) : (
           <ClassListing
             classes={classes}
             onNavigate={setCurrentPage}
@@ -1815,6 +1820,18 @@ export default function App() {
     return (
       <div className="min-h-screen bg-[#f8f9f6]">
         <ReviewHost />
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f8f9f6]">
+        <div className="text-center max-w-md mx-auto p-6">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#556B2F] mx-auto mb-4"></div>
+          <h2 className="text-[#3c4f21] mb-2">Loading HERD</h2>
+          <p className="text-[#556B2F] text-sm mb-4">{loadingMessage}</p>
+        </div>
       </div>
     );
   }

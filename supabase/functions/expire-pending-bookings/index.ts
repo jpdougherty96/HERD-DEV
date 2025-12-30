@@ -1,6 +1,8 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@14.25.0?target=denonext";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeaders, handleCors } from "../_shared/cors.ts";
+import { requireInternal } from "../_shared/internal.ts";
+import { createAdminClient } from "../_shared/supabase.ts";
 
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -11,13 +13,7 @@ if (!STRIPE_SECRET_KEY || !SUPABASE_URL || !SERVICE_ROLE) {
 }
 
 const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2025-02-24.acacia" });
-const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
-
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, content-type, apikey, x-client-info",
-};
+const supabase = createAdminClient();
 
 type PendingBookingRow = {
   id: string;
@@ -47,20 +43,23 @@ const computeClassEndMillis = (cls: PendingBookingRow["classes"]) => {
 };
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: CORS_HEADERS });
-  }
+  const cors = corsHeaders(req, "GET, POST, OPTIONS");
+  const preflight = handleCors(req, "GET, POST, OPTIONS");
+  if (preflight) return preflight;
+
+  const unauthorized = requireInternal(req, cors);
+  if (unauthorized) return unauthorized;
 
   if (req.method === "GET") {
     return new Response(JSON.stringify({ ok: true, service: "expire-pending-bookings" }), {
-      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      headers: { ...cors, "Content-Type": "application/json" },
     });
   }
 
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method Not Allowed" }), {
       status: 405,
-      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      headers: { ...cors, "Content-Type": "application/json" },
     });
   }
 
@@ -101,7 +100,7 @@ serve(async (req) => {
       console.error("[expire-pending-bookings] fetch error:", error);
       return new Response(JSON.stringify({ error: "Failed to load bookings" }), {
         status: 500,
-        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
 
@@ -152,14 +151,14 @@ serve(async (req) => {
     }
 
     return new Response(JSON.stringify({ ok: true, ...summary }), {
-      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      headers: { ...cors, "Content-Type": "application/json" },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[expire-pending-bookings] unexpected error", err);
     return new Response(JSON.stringify({ error: message }), {
       status: 500,
-      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      headers: { ...cors, "Content-Type": "application/json" },
     });
   }
 });

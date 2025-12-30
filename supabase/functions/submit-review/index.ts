@@ -1,25 +1,20 @@
 import { serve } from "https://deno.land/std/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeaders, handleCors } from "../_shared/cors.ts";
+import { createAdminClient } from "../_shared/supabase.ts";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
-
-const cors = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
+const admin = createAdminClient();
 
 serve(async (_req: Request) => {
-  if (_req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  const cors = corsHeaders(_req, "POST, OPTIONS");
+  const preflight = handleCors(_req, "POST, OPTIONS");
+  if (preflight) return preflight;
   if (_req.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: cors });
 
   try {
     const { token, rating, comment } = await _req.json();
 
     if (!token || typeof rating !== "number" || rating < 1 || rating > 5) {
-      return new Response(JSON.stringify({ error: "Invalid input" }), { status: 400, headers: cors });
+      return new Response(JSON.stringify({ error: "Invalid input" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     // Verify token
@@ -38,26 +33,26 @@ serve(async (_req: Request) => {
       .single();
 
     if (rtErr || !rt) {
-      return new Response(JSON.stringify({ error: "Invalid or unknown token" }), { status: 400, headers: cors });
+      return new Response(JSON.stringify({ error: "Invalid or unknown token" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     const now = new Date();
     if (rt.used_at) {
       return new Response(JSON.stringify({ error: "You have already reviewed this host for this class" }), {
         status: 409,
-        headers: cors,
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
     if (new Date(rt.expires_at).getTime() < now.getTime()) {
-      return new Response(JSON.stringify({ error: "Token expired" }), { status: 400, headers: cors });
+      return new Response(JSON.stringify({ error: "Token expired" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
     if (!rt.booking) {
-      return new Response(JSON.stringify({ error: "Booking not found for token" }), { status: 400, headers: cors });
+      return new Response(JSON.stringify({ error: "Booking not found for token" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
     if (rt.booking.reviewed) {
       return new Response(JSON.stringify({ error: "You have already reviewed this host for this class" }), {
         status: 409,
-        headers: cors,
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
 
@@ -95,9 +90,9 @@ serve(async (_req: Request) => {
       });
     }
 
-    return new Response(JSON.stringify({ ok: true }), { status: 200, headers: cors });
+    return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
   } catch (e: any) {
     console.error("[submit-review]", e);
-    return new Response(JSON.stringify({ error: e?.message || "Unknown error" }), { status: 500, headers: cors });
+    return new Response(JSON.stringify({ error: e?.message || "Unknown error" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
   }
 });

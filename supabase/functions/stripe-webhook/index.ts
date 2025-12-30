@@ -1,6 +1,7 @@
 // supabase/functions/stripe-webhook/index.ts
 import Stripe from "https://esm.sh/stripe@14?target=denonext";
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { corsHeaders, handleCors } from "../_shared/cors.ts";
+import { createAdminClient } from "../_shared/supabase.ts";
 
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY");
 const STRIPE_WEBHOOK_SECRET = Deno.env.get("STRIPE_WEBHOOK_SECRET");
@@ -17,45 +18,42 @@ if (!STRIPE_SECRET_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 
 const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2025-02-24.acacia" });
 const cryptoProvider = Stripe.createSubtleCryptoProvider();
-const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } });
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const supabase = createAdminClient();
 
 const roundCents = (n: number) => Math.round(n);
 
 /* -------------------------------------------------------------------------- */
 
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS")
-    return new Response(null, { status: 200, headers: corsHeaders });
+  const cors = corsHeaders(req, "POST, OPTIONS");
+  const preflight = handleCors(req, "POST, OPTIONS");
+  if (preflight) return preflight;
   if (req.method !== "POST")
-    return new Response("Method Not Allowed", { status: 405, headers: corsHeaders });
+    return new Response("Method Not Allowed", { status: 405, headers: cors });
 
   try {
     const sig = req.headers.get("stripe-signature");
     const isConnectEvent = !!req.headers.get("stripe-account");
     const rawBody = await req.text();
 
-    const secretToUse =
-      Deno.env.get("STRIPE_CLI_MODE") === "true"
-        ? STRIPE_CLI_WEBHOOK_SECRET
-        : isConnectEvent
-        ? STRIPE_CONNECT_WEBHOOK_SECRET
-        : STRIPE_WEBHOOK_SECRET;
-
     let event: Stripe.Event;
-    if (!secretToUse) {
-      console.warn("[webhook] ⚠️ No secret; skipping verification");
-      event = JSON.parse(rawBody);
-    } else if (Deno.env.get("STRIPE_CLI_MODE") === "true") {
+    const cliMode = Deno.env.get("STRIPE_CLI_MODE") === "true";
+    const nodeEnv = Deno.env.get("NODE_ENV") ?? "";
+    const allowCliBypass = cliMode && nodeEnv !== "production";
+
+    const baseSecret = isConnectEvent ? STRIPE_CONNECT_WEBHOOK_SECRET : STRIPE_WEBHOOK_SECRET;
+    if (allowCliBypass && !STRIPE_CLI_WEBHOOK_SECRET) {
       console.warn("[webhook] ⚠️ CLI mode; skipping verification");
       event = JSON.parse(rawBody);
     } else {
-      event = await stripe.webhooks.constructEventAsync(rawBody, sig!, secretToUse, undefined, cryptoProvider);
+      const secretToUse = allowCliBypass ? STRIPE_CLI_WEBHOOK_SECRET : baseSecret;
+      if (!secretToUse) {
+        throw new Error("Missing Stripe webhook secret");
+      }
+      if (!sig) {
+        throw new Error("Missing stripe-signature header");
+      }
+      event = await stripe.webhooks.constructEventAsync(rawBody, sig, secretToUse, undefined, cryptoProvider);
       console.log(`[webhook] ✅ Signature verified (${isConnectEvent ? "Connect" : "Platform"})`);
     }
 
@@ -261,13 +259,13 @@ Deno.serve(async (req: Request) => {
 
     return new Response(JSON.stringify({ received: true }), {
       status: 200,
-      headers: { "Content-Type": "application/json", ...corsHeaders },
+      headers: { "Content-Type": "application/json", ...cors },
     });
   } catch (err: any) {
     console.error("[webhook] ❌", err);
     return new Response(`Webhook Error: ${err?.message || "Unknown error"}`, {
       status: 400,
-      headers: corsHeaders,
+      headers: cors,
     });
   }
 });

@@ -1,13 +1,19 @@
 import { serve } from "https://deno.land/std/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+import { corsHeaders, handleCors } from "../_shared/cors.ts";
+import { requireInternal } from "../_shared/internal.ts";
+import { createAdminClient } from "../_shared/supabase.ts";
 const HERD_BASE_URL = Deno.env.get("HERD_BASE_URL")!; // e.g. https://yourapp.com
 
-const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+const admin = createAdminClient();
 
-serve(async () => {
+serve(async (req: Request) => {
+  const cors = corsHeaders(req, "GET, POST, OPTIONS");
+  const preflight = handleCors(req, "GET, POST, OPTIONS");
+  if (preflight) return preflight;
+
+  const unauthorized = requireInternal(req, cors);
+  if (unauthorized) return unauthorized;
+
   try {
     // Multi-day support: use classes.end_date when available, otherwise fall back to legacy single-day heuristic.
     const { data: rows, error } = await admin
@@ -49,7 +55,7 @@ serve(async () => {
     };
 
     const candidates = (rows || []).filter((b: any) => finishedMoreThan24hAgo(b.classes));
-    if (!candidates.length) return new Response("No pending invites", { status: 200 });
+    if (!candidates.length) return new Response("No pending invites", { status: 200, headers: cors });
 
     const bookingIds = candidates
       .map((b: any) => b.id)
@@ -74,7 +80,7 @@ serve(async () => {
     }
 
     const pendingInvites = candidates.filter((b: any) => !existingTokenBookings.has(b.id));
-    if (!pendingInvites.length) return new Response("No pending invites", { status: 200 });
+    if (!pendingInvites.length) return new Response("No pending invites", { status: 200, headers: cors });
 
     // Process each: create token, queue email
     for (const b of pendingInvites) {
@@ -115,9 +121,9 @@ serve(async () => {
       if (qErr) console.error("enqueue_email_job error", qErr);
     }
 
-    return new Response(`Invites queued: ${pendingInvites.length}`, { status: 200 });
+    return new Response(`Invites queued: ${pendingInvites.length}`, { status: 200, headers: cors });
   } catch (e) {
     console.error("[send-review-invites]", e);
-    return new Response("Error", { status: 500 });
+    return new Response("Error", { status: 500, headers: cors });
   }
 });

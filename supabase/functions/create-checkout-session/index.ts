@@ -1,49 +1,55 @@
 // supabase/functions/create-checkout-session/index.ts
 import { serve } from "https://deno.land/std/http/server.ts";
 import Stripe from "https://esm.sh/stripe@14?target=denonext";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requireAuth } from "../_shared/auth.ts";
+import { corsHeaders, getAllowedOrigin, handleCors } from "../_shared/cors.ts";
+import { createAdminClient } from "../_shared/supabase.ts";
 
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY")!;
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const SITE_URL = Deno.env.get("SITE_URL") || "http://localhost:3000";
 
 const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2025-02-24.acacia" });
-const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-function headers(extra: Record<string, string> = {}) {
-  return {
-    ...corsHeaders,
-    ...extra,
-  };
-}
+const admin = createAdminClient();
 
 serve(async (_req: Request) => {
-  if (_req.method === "OPTIONS")
-    return new Response(null, { status: 200, headers: corsHeaders });
-  if (_req.method !== "POST")
-    return new Response("Method Not Allowed", { status: 405, headers: headers() });
+  const cors = corsHeaders(_req, "POST, OPTIONS");
+  const preflight = handleCors(_req, "POST, OPTIONS");
+  if (preflight) return preflight;
+  if (_req.method !== "POST") {
+    return new Response("Method Not Allowed", { status: 405, headers: cors });
+  }
 
   try {
-    const { class_id, user_id, qty = 1, student_names } = await _req.json();
-    if (!class_id || !user_id) {
-      return new Response(JSON.stringify({ error: "Missing class_id or user_id" }), {
-        status: 400,
-        headers: headers({ "Content-Type": "application/json" }),
+    const auth = await requireAuth(_req);
+    if ("error" in auth) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
+
+    const { class_id, user_id, qty = 1, student_names } = await _req.json();
+    if (!class_id) {
+      return new Response(JSON.stringify({ error: "Missing class_id" }), {
+        status: 400,
+        headers: { ...cors, "Content-Type": "application/json" },
+      });
+    }
+
+    if (user_id && user_id !== auth.user.id) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { ...cors, "Content-Type": "application/json" },
+      });
+    }
+
+    const userId = auth.user.id;
 
     const requestedQty = Number.parseInt(String(qty), 10);
     if (!Number.isFinite(requestedQty) || requestedQty <= 0) {
       return new Response(JSON.stringify({ error: "Invalid quantity selected" }), {
         status: 400,
-        headers: headers({ "Content-Type": "application/json" }),
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
 
@@ -58,7 +64,7 @@ serve(async (_req: Request) => {
       console.error("❌ Class fetch error:", clsErr);
       return new Response(JSON.stringify({ error: "Class not found" }), {
         status: 404,
-        headers: headers({ "Content-Type": "application/json" }),
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
 
@@ -67,7 +73,7 @@ serve(async (_req: Request) => {
       console.error("❌ available_spots error:", spotsErr);
       return new Response(JSON.stringify({ error: "Unable to verify availability" }), {
         status: 400,
-        headers: headers({ "Content-Type": "application/json" }),
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
 
@@ -75,7 +81,7 @@ serve(async (_req: Request) => {
     if (seatsRemaining <= 0) {
       return new Response(JSON.stringify({ error: "This class is fully booked" }), {
         status: 400,
-        headers: headers({ "Content-Type": "application/json" }),
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
 
@@ -86,7 +92,7 @@ serve(async (_req: Request) => {
         }),
         {
           status: 400,
-          headers: headers({ "Content-Type": "application/json" }),
+          headers: { ...cors, "Content-Type": "application/json" },
         },
       );
     }
@@ -113,15 +119,15 @@ serve(async (_req: Request) => {
     if (!amount || amount <= 0) {
       return new Response(JSON.stringify({ error: "Invalid amount" }), {
         status: 400,
-        headers: headers({ "Content-Type": "application/json" }),
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
 
     // ⚙️ Capture strategy
     const capture_method = cls.auto_approve ? "automatic" : "manual";
 
-    const transferGroup = `booking_${class_id}_${user_id}`;
-    const requestOrigin = _req.headers.get("origin");
+    const transferGroup = `booking_${class_id}_${userId}`;
+    const requestOrigin = getAllowedOrigin(_req);
     const normalizedSite = (requestOrigin && requestOrigin.startsWith("http") ? requestOrigin : SITE_URL).replace(/\/$/, "");
     const origin = normalizedSite || SITE_URL.replace(/\/$/, "");
     const successUrl = Deno.env.get("STRIPE_SUCCESS_URL") ?? `${origin}/classes/checkout/success`;
@@ -132,7 +138,7 @@ serve(async (_req: Request) => {
       mode: "payment",
       metadata: {
         class_id,
-        user_id,
+        user_id: userId,
         qty: String(requestedQty),
         student_names: JSON.stringify(studentNames),
         transfer_group: transferGroup,
@@ -140,7 +146,7 @@ serve(async (_req: Request) => {
       payment_intent_data: {
         metadata: {
           class_id,
-          user_id,
+          user_id: userId,
           qty: String(requestedQty),
           student_names: JSON.stringify(studentNames),
           transfer_group: transferGroup,
@@ -164,13 +170,13 @@ serve(async (_req: Request) => {
 
     return new Response(JSON.stringify({ url: session.url }), {
       status: 200,
-      headers: headers({ "Content-Type": "application/json" }),
+      headers: { ...cors, "Content-Type": "application/json" },
     });
   } catch (err: any) {
     console.error("❌ create-checkout-session:", err?.message || err);
     return new Response(JSON.stringify({ error: err?.message || "Unknown error" }), {
       status: 500,
-      headers: headers({ "Content-Type": "application/json" }),
+      headers: { ...cors, "Content-Type": "application/json" },
     });
   }
 });

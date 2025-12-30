@@ -1,13 +1,14 @@
 // supabase/functions/payments/index.ts
 import { serve } from "https://deno.land/std/http/server.ts";
 import Stripe from "npm:stripe";
-import { createClient } from "npm:@supabase/supabase-js";
+import { requireAuth } from "../_shared/auth.ts";
+import { corsHeaders, handleCors } from "../_shared/cors.ts";
+import { createAdminClient } from "../_shared/supabase.ts";
 
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const SITE_URL = Deno.env.get("SITE_URL") || "http://localhost:3000";
-const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") || "http://localhost:3000";
 const EMAILS_KEY = Deno.env.get("EMAILS_KEY") || null; // optional, for sending emails
 
 if (!STRIPE_SECRET_KEY || !SUPABASE_URL || !SERVICE_ROLE_KEY) {
@@ -15,18 +16,7 @@ if (!STRIPE_SECRET_KEY || !SUPABASE_URL || !SERVICE_ROLE_KEY) {
 }
 
 const stripe = new Stripe(STRIPE_SECRET_KEY!, { apiVersion: "2024-06-20" });
-const admin = createClient(SUPABASE_URL!, SERVICE_ROLE_KEY!);
-
-const cors = {
-  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Vary": "Origin",
-};
-const withCors = (body: BodyInit, status = 200, extra: HeadersInit = {}) =>
-  new Response(body, { status, headers: { ...cors, ...extra } });
-const json = (data: unknown, status = 200) =>
-  withCors(JSON.stringify(data), status, { "content-type": "application/json" });
+const admin = createAdminClient();
 
 const matches = (pathname: string, suffix: string) =>
   pathname === suffix || pathname.endsWith(suffix);
@@ -104,9 +94,14 @@ async function sendConfirmedEmails(bookingId: string) {
 
 serve(async (_req: Request) => {
   const url = new URL(_req.url);
+  const cors = corsHeaders(_req, "GET, POST, OPTIONS");
+  const preflight = handleCors(_req, "GET, POST, OPTIONS");
+  if (preflight) return preflight;
 
-  // Preflight
-  if (_req.method === "OPTIONS") return withCors("ok");
+  const withCors = (body: BodyInit, status = 200, extra: HeadersInit = {}) =>
+    new Response(body, { status, headers: { ...cors, ...extra } });
+  const json = (data: unknown, status = 200) =>
+    withCors(JSON.stringify(data), status, { "content-type": "application/json" });
 
   try {
     // Health & debug
@@ -114,11 +109,16 @@ serve(async (_req: Request) => {
       return json({ ok: true, fn: "payments", at: new Date().toISOString(), saw_pathname: url.pathname, routes: ["/health", "/create-checkout", "/confirm", "/debug"] });
     }
     if (_req.method === "GET" && matches(url.pathname, "/debug")) {
-      return json({ method: _req.method, pathname: url.pathname, origin: ALLOWED_ORIGIN });
+      return json({ method: _req.method, pathname: url.pathname, origin: cors["Access-Control-Allow-Origin"] ?? null });
     }
 
     // 1) Create Checkout session
     if (_req.method === "POST" && matches(url.pathname, "/create-checkout")) {
+      const auth = await requireAuth(_req);
+      if ("error" in auth) {
+        return json({ error: "Unauthorized" }, 401);
+      }
+
       const { booking_id } = await _req.json().catch(() => ({} as any));
       if (!booking_id) return withCors("booking_id required", 400);
 
@@ -128,6 +128,7 @@ serve(async (_req: Request) => {
         .eq("id", booking_id)
         .single();
       if (bErr || !booking) return withCors("booking not found", 404);
+      if (booking.user_id !== auth.user.id) return json({ error: "Forbidden" }, 403);
 
       const { data: profile } = await admin
         .from("profiles")
@@ -174,6 +175,11 @@ serve(async (_req: Request) => {
     // 2) Confirm endpoint (fallback if webhook didn’t run)
     // Accepts: { session_id } OR { booking_id } (we look up session_id from DB)
     if (_req.method === "POST" && matches(url.pathname, "/confirm")) {
+      const auth = await requireAuth(_req);
+      if ("error" in auth) {
+        return json({ error: "Unauthorized" }, 401);
+      }
+
       const { session_id, booking_id } = await _req.json().catch(() => ({} as any));
 
       let sid = session_id as string | undefined;
@@ -187,10 +193,13 @@ serve(async (_req: Request) => {
         // look up the session id from the booking row
         const { data: b } = await admin
           .from("bookings")
-          .select("stripe_checkout_session_id")
+          .select("stripe_checkout_session_id, user_id")
           .eq("id", bid)
           .single();
         sid = b?.stripe_checkout_session_id ?? undefined;
+        if (b?.user_id && b.user_id !== auth.user.id) {
+          return json({ error: "Forbidden" }, 403);
+        }
       }
 
       if (!sid) return withCors("no session id available to confirm", 400);
@@ -206,6 +215,12 @@ serve(async (_req: Request) => {
       const paid =
         session.payment_status === "paid" ||
         (pi && (pi.status === "succeeded" || pi.status === "requires_capture" /* in case of manual capture */));
+
+      const sessionUserId = (session.metadata?.user_id as string | undefined) ??
+        (pi?.metadata?.user_id as string | undefined);
+      if (sessionUserId && sessionUserId !== auth.user.id) {
+        return json({ error: "Forbidden" }, 403);
+      }
 
       if (!paid) {
         return json({

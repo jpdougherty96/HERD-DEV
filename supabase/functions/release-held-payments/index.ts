@@ -1,26 +1,29 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@14.25.0";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeaders, handleCors } from "../_shared/cors.ts";
+import { requireInternal } from "../_shared/internal.ts";
+import { createAdminClient } from "../_shared/supabase.ts";
 
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY")!;
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const BUFFER_HOURS = Number(Deno.env.get("PAYOUT_BUFFER_HOURS") || "24"); // release +24h after class
 const SITE_URL = (Deno.env.get("SITE_URL") || "https://herdstaging.dev").replace(/\/+$/, "");
 
 const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2025-02-24.acacia" });
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const supabase = createAdminClient();
 
 serve(async (_req: Request) => {
-  if (_req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: corsHeaders });
-  }
+  const cors = corsHeaders(_req, "GET, POST, OPTIONS");
+  const preflight = handleCors(_req, "GET, POST, OPTIONS");
+  if (preflight) return preflight;
+
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...cors, "Content-Type": "application/json" },
+    });
+
+  const unauthorized = requireInternal(_req, cors);
+  if (unauthorized) return unauthorized;
 
   try {
     console.log(`[release-held-payments] 🔍 Checking for payouts older than ${BUFFER_HOURS}h`);
@@ -203,13 +206,3 @@ serve(async (_req: Request) => {
     return json({ error: err.message || String(err) }, 500);
   }
 });
-
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      ...corsHeaders,
-      "Content-Type": "application/json",
-    },
-  });
-}

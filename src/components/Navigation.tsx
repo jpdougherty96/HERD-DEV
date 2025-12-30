@@ -1,8 +1,22 @@
-import React, { useState } from 'react';
-import { Button } from './ui/button';
-import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from './ui/sheet';
-import { BookOpen, PlusCircle, MessageSquare, User, LogOut, LayoutDashboard, Menu, X } from 'lucide-react';
-import type { Page, User as UserType } from '../App';
+import React, { useState } from "react";
+import { Button } from "./ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetTrigger,
+  SheetTitle,
+  SheetDescription,
+} from "./ui/sheet";
+import {
+  BookOpen,
+  PlusCircle,
+  MessageSquare,
+  User,
+  LogOut,
+  LayoutDashboard,
+  Menu,
+} from "lucide-react";
+import type { Page, User as UserType } from "@/types/domain";
 
 type NavigationProps = {
   currentPage: Page;
@@ -12,8 +26,15 @@ type NavigationProps = {
   onShowAuth: () => void;
 };
 
-export function Navigation({ currentPage, onNavigate, user, onSignOut, onShowAuth }: NavigationProps) {
+export function Navigation({
+  currentPage,
+  onNavigate,
+  user,
+  onSignOut,
+  onShowAuth,
+}: NavigationProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const displayName = user?.name || user?.email || "Profile";
 
   const handleNavigate = (page: Page) => {
     onNavigate(page);
@@ -116,7 +137,7 @@ export function Navigation({ currentPage, onNavigate, user, onSignOut, onShowAut
                   }`}
                 >
                   <User className="w-4 h-4 mr-2" />
-                  {user.name}
+                  {displayName}
                 </Button>
                 <Button
                   variant="ghost"

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/utils/supabaseClient";
 import { resolvePriceCentsFromRow } from "@/utils/money";
 import type { Class, User } from "@/types/domain";
@@ -145,6 +145,7 @@ export function useClasses(currentUser?: User | null) {
   const [classes, setClasses] = useState<Class[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const initializedRef = useRef(false);
 
   const loadClassesFromServer = useCallback(async () => {
     setLoading(true);
@@ -174,6 +175,8 @@ export function useClasses(currentUser?: User | null) {
   }, [currentUser]);
 
   useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
     void loadClassesFromServer();
   }, [loadClassesFromServer]);
 

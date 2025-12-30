@@ -1,0 +1,44 @@
+name: HERD Scheduled Jobs
+
+on:
+  schedule:
+    # Every 10 minutes
+    - cron: "*/10 * * * *"
+    # Every hour (minute 5)
+    - cron: "5 * * * *"
+    # Every day at 2:15am UTC (8:15pm Central previous day in winter; adjust later if desired)
+    - cron: "15 2 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  run-jobs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call scheduled Edge Functions
+        env:
+          BASE_URL: ${{ secrets.SUPABASE_FUNCTIONS_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -e
+
+          call_fn () {
+            FN_NAME="$1"
+            echo "Calling $FN_NAME..."
+            curl -sS -X POST "$BASE_URL/$FN_NAME" \
+              -H "Content-Type: application/json" \
+              -H "x-cron-secret: $CRON_SECRET" \
+              --data '{}' \
+              --fail
+            echo ""
+          }
+
+          # Every time this workflow runs (every 10 minutes),
+          # we run the "frequent" jobs:
+          call_fn "expire-pending-bookings"
+          call_fn "send-unread-message-alerts"
+
+          # Hourly job (we still run it, but you can split later if you want)
+          call_fn "release-held-payments"
+
+          # Daily job (we still run it, but you can split later if you want)
+          call_fn "send-review-invites"

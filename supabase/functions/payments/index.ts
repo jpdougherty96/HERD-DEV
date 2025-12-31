@@ -6,13 +6,15 @@ import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { createAdminClient } from "../_shared/supabase.ts";
 
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY");
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+const SUPABASE_URL = Deno.env.get("HERD_SUPABASE_URL") ?? Deno.env.get("SUPABASE_URL");
+const SERVICE_ROLE_KEY = Deno.env.get("HERD_SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const SITE_URL = Deno.env.get("SITE_URL") || "http://localhost:3000";
 const EMAILS_KEY = Deno.env.get("EMAILS_KEY") || null; // optional, for sending emails
 
 if (!STRIPE_SECRET_KEY || !SUPABASE_URL || !SERVICE_ROLE_KEY) {
-  console.error("Missing required env vars: STRIPE_SECRET_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY");
+  console.error(
+    "Missing required env vars: STRIPE_SECRET_KEY, HERD_SUPABASE_URL (or SUPABASE_URL), HERD_SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_ROLE_KEY)",
+  );
 }
 
 const stripe = new Stripe(STRIPE_SECRET_KEY!, { apiVersion: "2024-06-20" });

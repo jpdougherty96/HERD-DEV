@@ -4,9 +4,9 @@ on:
   schedule:
     # Every 10 minutes
     - cron: "*/10 * * * *"
-    # Every hour (minute 5)
+    # Every hour at minute 5
     - cron: "5 * * * *"
-    # Every day at 2:15am UTC (8:15pm Central previous day in winter; adjust later if desired)
+    # Every day at 02:15 UTC
     - cron: "15 2 * * *"
   workflow_dispatch: {}
 
@@ -16,29 +16,62 @@ jobs:
     steps:
       - name: Call scheduled Edge Functions
         env:
-          BASE_URL: ${{ secrets.SUPABASE_FUNCTIONS_BASE_URL }}
+          BASE_URL: https://ndxoyswdvtvcftcmiwit.supabase.co/functions/v1
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          set -e
+          set -euo pipefail
+
+          BASE_URL_CLEAN="$(printf %s "$BASE_URL" | tr -d '\r\n')"
+          EVENT="${{ github.event_name }}"
+          CRON="${{ github.event.schedule || '' }}"
+
+          echo "Event: $EVENT"
+          echo "Schedule: $CRON"
+          echo "Base URL: $BASE_URL_CLEAN"
 
           call_fn () {
             FN_NAME="$1"
+            echo ""
             echo "Calling $FN_NAME..."
-            curl -sS -X POST "$BASE_URL/$FN_NAME" \
+            RESP=$(curl -sS -X POST "$BASE_URL_CLEAN/$FN_NAME" \
               -H "Content-Type: application/json" \
               -H "x-cron-secret: $CRON_SECRET" \
               --data '{}' \
-              --fail
-            echo ""
+              -w "\nHTTP_STATUS:%{http_code}\n")
+
+            echo "$RESP"
+
+            STATUS=$(echo "$RESP" | sed -n 's/^HTTP_STATUS://p')
+            if [ -z "$STATUS" ] || [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 300 ]; then
+              echo "❌ $FN_NAME failed with status $STATUS"
+              exit 1
+            fi
+
+            echo "✅ $FN_NAME OK"
           }
 
-          # Every time this workflow runs (every 10 minutes),
-          # we run the "frequent" jobs:
-          call_fn "expire-pending-bookings"
-          call_fn "send-unread-message-alerts"
+          # If run manually, run everything
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            call_fn "expire-pending-bookings"
+            call_fn "send-unread-message-alerts"
+            call_fn "release-held-payments"
+            call_fn "send-review-invites"
+            exit 0
+          fi
 
-          # Hourly job (we still run it, but you can split later if you want)
-          call_fn "release-held-payments"
-
-          # Daily job (we still run it, but you can split later if you want)
-          call_fn "send-review-invites"
+          # Scheduled runs: execute only what matches the triggering cron string
+          case "$CRON" in
+            "*/10 * * * *")
+              call_fn "expire-pending-bookings"
+              call_fn "send-unread-message-alerts"
+              ;;
+            "5 * * * *")
+              call_fn "release-held-payments"
+              ;;
+            "15 2 * * *")
+              call_fn "send-review-invites"
+              ;;
+            *)
+              echo "Unknown schedule trigger: '$CRON' — doing nothing."
+              ;;
+          esac

@@ -2,16 +2,13 @@
 // HERD Email Dispatcher — simplified HTML-only version (friendly-business tone)
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Resend } from "https://esm.sh/resend@3.2.0";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { requireInternal } from "../_shared/internal.ts";
+import { createAdminClient } from "../_shared/supabase.ts";
 
 // Setup clients
-const supabase = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-);
+const supabase = createAdminClient();
 
 const resend = new Resend(Deno.env.get("RESEND_API_KEY")!);
 const BASE_URL = (Deno.env.get("SITE_URL") ?? "https://herdstaging.dev").replace(/\/+$/, "");

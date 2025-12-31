@@ -8,6 +8,7 @@ const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
+
 if (!STRIPE_SECRET_KEY || !SUPABASE_URL || !SERVICE_ROLE) {
   throw new Error("Missing required environment variables");
 }

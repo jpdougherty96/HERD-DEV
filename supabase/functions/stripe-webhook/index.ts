@@ -19,7 +19,7 @@ const SUPABASE_URL = Deno.env.get("HERD_SUPABASE_URL") ?? Deno.env.get("SUPABASE
 const SUPABASE_SERVICE_ROLE_KEY =
   Deno.env.get("HERD_SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-const HERD_FEE_RATE = Number(Deno.env.get("HERD_FEE_RATE") ?? 0.08);
+const HERD_FEE_RATE = Number(Deno.env.get("HERD_FEE_RATE") ?? 0.15);
 
 if (!STRIPE_SECRET_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   throw new Error("Missing required environment variables");

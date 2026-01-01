@@ -46,7 +46,7 @@ export function StripeSetupPrompt({ onClose, onGoToProfile, hostName }: StripeSe
               <li>• Secure payment processing through Stripe</li>
               <li>• Direct deposits to your bank account</li>
               <li>• HERD handles all payment compliance</li>
-              <li>• Automatic fee collection (5% service fee)</li>
+              <li>• Automatic fee collection (15% service fee)</li>
             </ul>
           </div>
 

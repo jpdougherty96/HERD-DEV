@@ -5,7 +5,7 @@ import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { createAdminClient } from "../_shared/supabase.ts";
 
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY")!;
-const HERD_FEE_RATE = Number(Deno.env.get("HERD_FEE_RATE") ?? 0.08);
+const HERD_FEE_RATE = Number(Deno.env.get("HERD_FEE_RATE") ?? 0.15);
 
 const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2025-02-24.acacia" });
 const admin = createAdminClient();

@@ -52,7 +52,7 @@ export function BookingModal({ classData, user, onClose, onBookingSuccess, initi
   const [loadingSeats, setLoadingSeats] = useState(false);
 
   // ---- MONEY ----
-  const herdFeePercentage = 8;
+  const herdFeePercentage = 15;
   const unitCents = normalizeToCents(classData.pricePerPerson);
   const subtotalCents = unitCents * numberOfStudents;
   const herdFeeCents = Math.round(subtotalCents * (herdFeePercentage / 100));

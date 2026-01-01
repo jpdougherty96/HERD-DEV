@@ -112,7 +112,7 @@ serve(async (_req: Request) => {
     };
 
     const basePriceCents = normalizeToCents(Number(cls.price_per_person_cents ?? 0));
-    const herdFeeRate = Number(Deno.env.get("HERD_FEE_RATE") ?? 0.08);
+    const herdFeeRate = Number(Deno.env.get("HERD_FEE_RATE") ?? 0.15);
     const totalPerStudentCents = Math.round(basePriceCents * (1 + herdFeeRate));
     const amount = totalPerStudentCents * requestedQty;
 

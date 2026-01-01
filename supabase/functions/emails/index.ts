@@ -11,7 +11,7 @@ import { createAdminClient } from "../_shared/supabase.ts";
 const supabase = createAdminClient();
 
 const resend = new Resend(Deno.env.get("RESEND_API_KEY")!);
-const BASE_URL = (Deno.env.get("SITE_URL") ?? "https://herdstaging.dev").replace(/\/+$/, "");
+const BASE_URL = (Deno.env.get("SITE_URL") ?? "https://herd.rent").replace(/\/+$/, "");
 const MAX_ATTEMPTS = Number.parseInt(Deno.env.get("EMAILS_MAX_ATTEMPTS") ?? "5", 10) || 5;
 
 
@@ -94,7 +94,7 @@ function subjectFor(type: EmailType, v: EmailVars): string {
 
 function renderEmailHTML(type: EmailType, v: EmailVars): string {
   const header = `<div style="background:#556B2F;padding:20px;border-radius:16px 16px 0 0;color:#fff;font-size:28px;font-weight:bold;text-align:center;">HERD</div>`;
-  const footer = `<div style="padding:20px;text-align:center;color:#777;font-size:13px;">© ${new Date().getFullYear()} HERD — <a href="https://herdstaging.dev" style="color:#777;">herdstaging.dev</a></div>`;
+  const footer = `<div style="padding:20px;text-align:center;color:#777;font-size:13px;">© ${new Date().getFullYear()} HERD — <a href="https://herd.rent" style="color:#777;">herd.rent</a></div>`;
 
   const section = (title: string, body: string) =>
     `<div style="margin-bottom:24px;"><h3 style="margin:0 0 8px;color:#3c4f21;">${title}</h3><p style="margin:0;color:#333;font-size:15px;line-height:1.6;">${body}</p></div>`;

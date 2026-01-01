@@ -651,6 +651,30 @@ export default function App() {
   }, [user?.id]);
 
   useEffect(() => {
+    if (!user?.id) return;
+    if (currentPage !== "dashboard" && currentPage !== "profile") return;
+
+    let cancelled = false;
+    const refreshProfile = async () => {
+      try {
+        await loadUserProfile(user.id, 0);
+      } catch {
+        /* best-effort refresh */
+      }
+    };
+
+    refreshProfile();
+    const timer = setTimeout(() => {
+      if (!cancelled) refreshProfile();
+    }, 4000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [currentPage, user?.id]);
+
+  useEffect(() => {
     if (currentPage !== "dashboard") return;
     if (!dashboardLink || dashboardLink.consumed) return;
 

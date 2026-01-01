@@ -30,6 +30,7 @@ const cryptoProvider = Stripe.createSubtleCryptoProvider();
 const supabase = createAdminClient();
 
 const roundCents = (n: number) => Math.round(n);
+const computeStripeFeeCents = (totalCents: number) => Math.round(totalCents * 0.029 + 30);
 
 // Some Supabase/PostgREST errors include a code for unique violations.
 // In practice you might see "23505" for Postgres unique violation.
@@ -235,6 +236,8 @@ Deno.serve(async (req: Request) => {
 
         // Store charge + fee details (best-effort)
         try {
+          const estimatedStripeFeeCents = computeStripeFeeCents(total_cents);
+          let stripeFeeCents = estimatedStripeFeeCents;
           if (paymentIntentId) {
             const pi = await stripe.paymentIntents.retrieve(paymentIntentId, {
               expand: ["latest_charge", "charges.data.balance_transaction"],
@@ -254,11 +257,11 @@ Deno.serve(async (req: Request) => {
             const charge = pi.charges?.data?.[0];
             const bt = charge?.balance_transaction as Stripe.BalanceTransaction | undefined;
             const stripeFee = bt?.fee || 0;
-
-            if (stripeFee > 0) {
-              await supabase.from("bookings").update({ stripe_fee_cents: stripeFee }).eq("id", bookingId);
-              console.log(`[webhook] 💸 Stored Stripe fee ${stripeFee}¢ for booking ${bookingId}`);
-            }
+            if (stripeFee > 0) stripeFeeCents = stripeFee;
+          }
+          if (stripeFeeCents > 0) {
+            await supabase.from("bookings").update({ stripe_fee_cents: stripeFeeCents }).eq("id", bookingId);
+            console.log(`[webhook] 💸 Stored Stripe fee ${stripeFeeCents}¢ for booking ${bookingId}`);
           }
         } catch (piDetailsErr) {
           console.warn("[webhook] ⚠️ Could not store Stripe charge/fee details", piDetailsErr);

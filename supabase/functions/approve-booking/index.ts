@@ -74,10 +74,12 @@ serve(async (_req: Request) => {
     // 1️⃣ Capture payment
     const pi = await stripe.paymentIntents.capture(b.stripe_payment_intent_id);
 
-    // 2️⃣ Compute platform/host split
+    // 2️⃣ Compute platform/host split (total includes HERD fee)
     const total = Number(b.total_cents || 0);
-    const platform_fee_cents = round(total * HERD_FEE_RATE);
-    const host_payout_cents = total - platform_fee_cents;
+    const hostPortion = total / (1 + HERD_FEE_RATE);
+    const platform_fee_cents = round(hostPortion * HERD_FEE_RATE);
+    const host_payout_cents = round(hostPortion);
+    const stripe_fee_cents = round(total * 0.029 + 30);
 
     // 3️⃣ Update booking — funds now held
     await admin
@@ -88,6 +90,7 @@ serve(async (_req: Request) => {
         payment_status: "HELD",
         platform_fee_cents,
         host_payout_cents,
+        stripe_fee_cents,
         stripe_charge_id:
           (typeof pi.latest_charge === "string" ? pi.latest_charge : pi.latest_charge?.id) ||
           null,

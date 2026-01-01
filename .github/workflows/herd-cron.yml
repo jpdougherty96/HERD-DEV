@@ -2,6 +2,8 @@ name: HERD Scheduled Jobs
 
 on:
   schedule:
+    # Every minute (GitHub Actions minimum granularity)
+    - cron: "* * * * *"
     # Every 10 minutes
     - cron: "*/10 * * * *"
     # Every hour at minute 5
@@ -64,6 +66,9 @@ jobs:
             "*/10 * * * *")
               call_fn "expire-pending-bookings"
               call_fn "send-unread-message-alerts"
+              ;;
+            "* * * * *")
+              call_fn "emails"
               ;;
             "5 * * * *")
               call_fn "release-held-payments"

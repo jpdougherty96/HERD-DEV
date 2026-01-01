@@ -122,7 +122,7 @@ function renderEmailHTML(type: EmailType, v: EmailVars): string {
             ${v.CLASS_ADDRESS || ""}
           `.trim()
         )}
-        ${button("Review Request", v.REVIEW_URL || dashUrl)}
+        ${button("Review Request", v.REVIEW_URL || hostBookingsUrl)}
       `;
       break;
 
@@ -243,7 +243,7 @@ async function sendEmail(to: string, type: EmailType, vars: EmailVars) {
   const html = renderEmailHTML(type, vars);
 
   const result = await resend.emails.send({
-    from: "HERD <notifications@herdstaging.dev>",
+    from: "HERD <notifications@herd.rent>",
     to,
     subject,
     html,

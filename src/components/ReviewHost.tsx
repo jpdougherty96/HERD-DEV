@@ -3,8 +3,11 @@ import { Button } from "../components/ui/button";
 import { Textarea } from "../components/ui/textarea";
 import StarRating from "../components/StarRating";
 
-const functionsBase = import.meta.env.VITE_SUPABASE_FUNCTIONS_BASE
-  ?? "https://czdzjdujojcjluqcdchq.functions.supabase.co";
+const functionsBase = (
+  import.meta.env.VITE_SUPABASE_FUNCTIONS_BASE
+  ?? import.meta.env.VITE_SUPABASE_URL?.replace(".supabase.co", ".functions.supabase.co")
+  ?? ""
+).replace(/\/$/, "");
 
 const ALREADY_REVIEWED_MESSAGE = "You have already reviewed this host for this class";
 

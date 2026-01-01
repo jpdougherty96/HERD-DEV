@@ -15,6 +15,12 @@ import { formatDateRangeShort, formatPrice, formatTime } from '@/utils/formattin
 import { projectId } from '../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
 
+const functionsBase = (
+  import.meta.env.VITE_SUPABASE_FUNCTIONS_BASE
+  ?? import.meta.env.VITE_SUPABASE_URL?.replace(".supabase.co", ".functions.supabase.co")
+  ?? ""
+).replace(/\/$/, "");
+
 // New booking type for our system
 interface HerdBooking {
   id: string;
@@ -406,9 +412,8 @@ export function HostDashboard({
         console.log(`🚀 ${action.toUpperCase()} booking triggered for`, bookingId);
       }
 
-      // ✅ Always hit the correct Edge Function domain
       const functionName = action === 'approve' ? 'approve-booking' : 'deny-booking';
-      const endpoint = `https://czdzjdujojcjluqcdchq.functions.supabase.co/${functionName}`;
+      const endpoint = `${functionsBase}/${functionName}`;
 
       const payload =
         action === 'approve'

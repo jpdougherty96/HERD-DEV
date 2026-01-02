@@ -10,18 +10,38 @@ import { supabase } from '../utils/supabaseClient';
 import { normalizeToCents } from '../utils/money';
 import { formatDateRangeDisplay, formatTime as formatTimeDisplay } from "@/utils/formatting";
 
-async function startPayment(classId: string, userId: string, qty: number, studentNames: string[]) {
-  const { data, error } = await supabase.functions.invoke('create-checkout-session', {
+async function startPayment(
+  classId: string,
+  userId: string,
+  accessToken: string,
+  qty: number,
+  studentNames: string[],
+) {
+  const { data, error, response } = await supabase.functions.invoke('create-checkout-session', {
     body: {
       class_id: classId,
       user_id: userId,
       qty,
       student_names: studentNames,
     },
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
   });
 
   if (error) {
-    throw new Error(error.message || 'Could not start checkout');
+    let message = error.message || 'Could not start checkout';
+    if (response) {
+      try {
+        const body = await response.json();
+        if (body?.error && typeof body.error === 'string') {
+          message = body.error;
+        }
+      } catch {
+        // ignore parse errors, fall back to default message
+      }
+    }
+    throw new Error(message);
   }
 
   const url = (data as { url?: string } | null)?.url;
@@ -168,7 +188,7 @@ export function BookingModal({ classData, user, onClose, onBookingSuccess, initi
         return;
       }
 
-      await startPayment(classData.id, userId, numberOfStudents, normalizedNames);
+      await startPayment(classData.id, userId, session.access_token, numberOfStudents, normalizedNames);
     } catch (err: any) {
       console.error('Booking error:', err);
       setError(err?.message || 'An error occurred while starting your checkout. Please try again.');

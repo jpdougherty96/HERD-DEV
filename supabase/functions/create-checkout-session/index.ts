@@ -7,10 +7,19 @@ import { getStripe } from "../_shared/stripe.ts";
 import { createAdminClient } from "../_shared/supabase.ts";
 
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY")!;
-const SITE_URL = Deno.env.get("SITE_URL") || "http://localhost:3000";
+const DEFAULT_SITE_URL = "https://herd.rent";
+const SITE_URL = normalizeSiteUrl(Deno.env.get("SITE_URL") || DEFAULT_SITE_URL);
 
 const stripe = getStripe(STRIPE_SECRET_KEY, Stripe);
 const admin = createAdminClient();
+
+function normalizeSiteUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return DEFAULT_SITE_URL;
+  const lower = trimmed.toLowerCase();
+  if (lower.includes("localhost") || lower.includes("127.0.0.1")) return DEFAULT_SITE_URL;
+  return trimmed.replace(/\/+$/, "");
+}
 
 serve(async (_req: Request) => {
   const cors = corsHeaders(_req, "POST, OPTIONS");

@@ -3,7 +3,16 @@ import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { requireInternal } from "../_shared/internal.ts";
 import { createAdminClient } from "../_shared/supabase.ts";
 
-const HERD_BASE_URL = (Deno.env.get("HERD_BASE_URL") || "https://herd.co").replace(/\/$/, "");
+const DEFAULT_BASE_URL = "https://herd.rent";
+const HERD_BASE_URL = normalizeBaseUrl(Deno.env.get("HERD_BASE_URL") || DEFAULT_BASE_URL, DEFAULT_BASE_URL);
+
+function normalizeBaseUrl(value: string, fallback: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return fallback;
+  const lower = trimmed.toLowerCase();
+  if (lower.includes("localhost") || lower.includes("127.0.0.1")) return fallback;
+  return trimmed.replace(/\/+$/, "");
+}
 
 const admin = createAdminClient();
 

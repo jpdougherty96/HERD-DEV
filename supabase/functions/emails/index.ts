@@ -11,8 +11,17 @@ import { createAdminClient } from "../_shared/supabase.ts";
 const supabase = createAdminClient();
 
 const resend = new Resend(Deno.env.get("RESEND_API_KEY")!);
-const BASE_URL = (Deno.env.get("SITE_URL") ?? "https://herd.rent").replace(/\/+$/, "");
+const DEFAULT_SITE_URL = "https://herd.rent";
+const BASE_URL = normalizeSiteUrl(Deno.env.get("SITE_URL") ?? DEFAULT_SITE_URL);
 const MAX_ATTEMPTS = Number.parseInt(Deno.env.get("EMAILS_MAX_ATTEMPTS") ?? "5", 10) || 5;
+
+function normalizeSiteUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return DEFAULT_SITE_URL;
+  const lower = trimmed.toLowerCase();
+  if (lower.includes("localhost") || lower.includes("127.0.0.1")) return DEFAULT_SITE_URL;
+  return trimmed.replace(/\/+$/, "");
+}
 
 
 // Allowed email types

@@ -236,8 +236,11 @@ export function HostDashboard({
       const items = Array.isArray(data) ? data : [];
 
       const mapped = items.map((b: any) => {
-        const toCents = (value: any) =>
-          Math.max(0, Math.round(Number(value ?? 0)));
+        const toCents = (value: any) => {
+          const numeric = Number(value ?? 0);
+          if (!Number.isFinite(numeric)) return 0;
+          return Math.max(0, Math.round(numeric));
+        };
         const statusRaw = (b.status || 'PENDING').toString().toUpperCase();
         const normalizedStatus =
           statusRaw === 'CONFIRMED' ? 'APPROVED' : statusRaw;
@@ -262,6 +265,14 @@ export function HostDashboard({
           ? studentCountRaw
           : studentNamesArray.length || 1;
 
+        const totalAmount = toCents(b.total_cents);
+        const herdFee = toCents(b.platform_fee_cents);
+        const hasHostPayout = b.host_payout_cents !== null && b.host_payout_cents !== undefined;
+        let subtotal = hasHostPayout ? toCents(b.host_payout_cents) : 0;
+        if (!hasHostPayout && totalAmount > 0) {
+          subtotal = herdFee > 0 && herdFee < totalAmount ? totalAmount - herdFee : totalAmount;
+        }
+
         return {
           id: b.id,
           classId: b.class_id,
@@ -273,9 +284,9 @@ export function HostDashboard({
           hostName: user.name,
           studentCount,
           studentNames: studentNamesArray,
-          totalAmount: toCents(b.total_cents),
-          subtotal: toCents(b.host_payout_cents),
-          herdFee: toCents(b.platform_fee_cents),
+          totalAmount,
+          subtotal,
+          herdFee,
           status: normalizedStatus,
           paymentStatus: paymentStatusRaw,
           createdAt: b.created_at || '',
@@ -1012,7 +1023,10 @@ export function HostDashboard({
           <div className="space-y-4">
             {orderedBookings.map((booking) => {
               const classData = classes.find(c => c.id === booking.classId);
-              const displayedEarnings = booking.status === 'DENIED' ? 0 : booking.subtotal;
+              const displayedEarnings =
+                booking.status !== 'DENIED' && eligiblePaymentStatuses.has(booking.paymentStatus)
+                  ? booking.subtotal
+                  : 0;
               return (
                 <Card key={booking.id}>
                   <CardContent className="p-4 md:p-6">

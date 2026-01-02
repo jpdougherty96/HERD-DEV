@@ -5,9 +5,18 @@ import { requireInternal } from "../_shared/internal.ts";
 import { getStripe } from "../_shared/stripe.ts";
 import { createAdminClient } from "../_shared/supabase.ts";
 
+const normalizeSiteUrl = (value: string, fallback: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return fallback;
+  const lower = trimmed.toLowerCase();
+  if (lower.includes("localhost") || lower.includes("127.0.0.1")) return fallback;
+  return trimmed.replace(/\/+$/, "");
+};
+
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY")!;
 const BUFFER_HOURS = Number(Deno.env.get("PAYOUT_BUFFER_HOURS") || "24"); // release +24h after class
-const SITE_URL = (Deno.env.get("SITE_URL") || "https://herdstaging.dev").replace(/\/+$/, "");
+const DEFAULT_SITE_URL = "https://herd.rent";
+const SITE_URL = normalizeSiteUrl(Deno.env.get("SITE_URL") || DEFAULT_SITE_URL, DEFAULT_SITE_URL);
 
 const stripe = getStripe(STRIPE_SECRET_KEY, Stripe);
 const supabase = createAdminClient();

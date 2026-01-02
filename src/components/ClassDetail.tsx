@@ -486,7 +486,13 @@ export function ClassDetail({ classData, user, onNavigate, onRequireAuth, onView
                     size="lg"
                     disabled={availableSpots === 0}
                   >
-                    {availableSpots === 0 ? 'Fully Booked' : user ? (classData.auto_approve ? 'Book This Class' : 'Request Booking') : 'Sign In to Book'}
+                    {availableSpots === 0
+                      ? 'Fully Booked'
+                      : user
+                        ? classData.auto_approve
+                          ? 'Book This Class'
+                          : 'Request Booking'
+                        : 'You must be signed in to book a class'}
                   </Button>
                   
                   {/* Message Host / Go to Conversation Button */}

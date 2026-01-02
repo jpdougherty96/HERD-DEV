@@ -20,12 +20,22 @@ jobs:
         env:
           BASE_URL: https://ndxoyswdvtvcftcmiwit.supabase.co/functions/v1
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -euo pipefail
 
           BASE_URL_CLEAN="$(printf %s "$BASE_URL" | tr -d '\r\n')"
           EVENT="${{ github.event_name }}"
           CRON="${{ github.event.schedule || '' }}"
+          AUTH_KEY="${SUPABASE_SERVICE_ROLE_KEY:-}"
+          if [ -z "$AUTH_KEY" ]; then
+            AUTH_KEY="${SUPABASE_ANON_KEY:-}"
+          fi
+          AUTH_HEADERS=()
+          if [ -n "$AUTH_KEY" ]; then
+            AUTH_HEADERS=(-H "Authorization: Bearer $AUTH_KEY" -H "apikey: $AUTH_KEY")
+          fi
 
           echo "Event: $EVENT"
           echo "Schedule: $CRON"
@@ -38,6 +48,7 @@ jobs:
             RESP=$(curl -sS -X POST "$BASE_URL_CLEAN/$FN_NAME" \
               -H "Content-Type: application/json" \
               -H "x-cron-secret: $CRON_SECRET" \
+              "${AUTH_HEADERS[@]}" \
               --data '{}' \
               -w "\nHTTP_STATUS:%{http_code}\n")
 

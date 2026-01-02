@@ -3,12 +3,13 @@ import { serve } from "https://deno.land/std/http/server.ts";
 import Stripe from "https://esm.sh/stripe@14?target=denonext";
 import { requireAuth } from "../_shared/auth.ts";
 import { corsHeaders, getAllowedOrigin, handleCors } from "../_shared/cors.ts";
+import { getStripe } from "../_shared/stripe.ts";
 import { createAdminClient } from "../_shared/supabase.ts";
 
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY")!;
 const SITE_URL = Deno.env.get("SITE_URL") || "http://localhost:3000";
 
-const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2025-02-24.acacia" });
+const stripe = getStripe(STRIPE_SECRET_KEY, Stripe);
 const admin = createAdminClient();
 
 serve(async (_req: Request) => {
@@ -68,9 +69,9 @@ serve(async (_req: Request) => {
       });
     }
 
-    const { data: spots, error: spotsErr } = await admin.rpc("available_spots", { class_uuid: class_id });
+    const { data: spots, error: spotsErr } = await admin.rpc("available_spots_with_holds", { class_uuid: class_id });
     if (spotsErr) {
-      console.error("❌ available_spots error:", spotsErr);
+      console.error("❌ available_spots_with_holds error:", spotsErr);
       return new Response(JSON.stringify({ error: "Unable to verify availability" }), {
         status: 400,
         headers: { ...cors, "Content-Type": "application/json" },
@@ -123,6 +124,27 @@ serve(async (_req: Request) => {
       });
     }
 
+    const holdExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    const { data: hold, error: holdErr } = await admin
+      .from("booking_holds")
+      .insert({
+        class_id,
+        guest_id: userId,
+        quantity: requestedQty,
+        status: "HELD",
+        expires_at: holdExpiresAt,
+      })
+      .select("id")
+      .single();
+
+    if (holdErr || !hold) {
+      console.error("❌ booking_holds insert error:", holdErr);
+      return new Response(JSON.stringify({ error: "Unable to reserve seats" }), {
+        status: 400,
+        headers: { ...cors, "Content-Type": "application/json" },
+      });
+    }
+
     // ⚙️ Capture strategy
     const capture_method = cls.auto_approve ? "automatic" : "manual";
 
@@ -133,17 +155,11 @@ serve(async (_req: Request) => {
     const successUrl = Deno.env.get("STRIPE_SUCCESS_URL") ?? `${origin}/classes/checkout/success`;
     const cancelUrl = Deno.env.get("STRIPE_CANCEL_URL") ?? `${origin}/classes/checkout/cancel`;
 
-    // 💳 Create checkout session with metadata
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      metadata: {
-        class_id,
-        user_id: userId,
-        qty: String(requestedQty),
-        student_names: JSON.stringify(studentNames),
-        transfer_group: transferGroup,
-      },
-      payment_intent_data: {
+    let session: Stripe.Checkout.Session;
+    try {
+      // 💳 Create checkout session with metadata
+      session = await stripe.checkout.sessions.create({
+        mode: "payment",
         metadata: {
           class_id,
           user_id: userId,
@@ -151,24 +167,50 @@ serve(async (_req: Request) => {
           student_names: JSON.stringify(studentNames),
           transfer_group: transferGroup,
         },
-        capture_method,
-        transfer_group: transferGroup,
-      },
-      line_items: [
-        {
-          price_data: {
-            currency: "usd",
-            product_data: { name: `Class: ${cls.title}` },
-            unit_amount: totalPerStudentCents, // ✅ includes HERD fee
+        payment_intent_data: {
+          metadata: {
+            class_id,
+            user_id: userId,
+            qty: String(requestedQty),
+            student_names: JSON.stringify(studentNames),
+            transfer_group: transferGroup,
           },
-          quantity: requestedQty,
+          capture_method,
+          transfer_group: transferGroup,
         },
-      ],
-      success_url: `${successUrl}?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: cancelUrl,
-    });
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              product_data: { name: `Class: ${cls.title}` },
+              unit_amount: totalPerStudentCents, // ✅ includes HERD fee
+            },
+            quantity: requestedQty,
+          },
+        ],
+        success_url: `${successUrl}?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: cancelUrl,
+      });
+    } catch (sessionErr) {
+      await admin.from("booking_holds").update({ status: "CANCELLED" }).eq("id", hold.id);
+      throw sessionErr;
+    }
 
-    return new Response(JSON.stringify({ url: session.url }), {
+    const { error: holdUpdateErr } = await admin
+      .from("booking_holds")
+      .update({ stripe_checkout_session_id: session.id })
+      .eq("id", hold.id);
+
+    if (holdUpdateErr) {
+      console.error("❌ booking_holds update error:", holdUpdateErr);
+      await admin.from("booking_holds").update({ status: "CANCELLED" }).eq("id", hold.id);
+      return new Response(JSON.stringify({ error: "Unable to finalize seat hold" }), {
+        status: 400,
+        headers: { ...cors, "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ url: session.url, hold_id: hold.id }), {
       status: 200,
       headers: { ...cors, "Content-Type": "application/json" },
     });

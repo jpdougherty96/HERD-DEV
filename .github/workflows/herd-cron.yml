@@ -22,6 +22,7 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
           set -euo pipefail
 
@@ -31,6 +32,13 @@ jobs:
           AUTH_KEY="${SUPABASE_SERVICE_ROLE_KEY:-}"
           if [ -z "$AUTH_KEY" ]; then
             AUTH_KEY="${SUPABASE_ANON_KEY:-}"
+          fi
+          if [ -z "$AUTH_KEY" ]; then
+            AUTH_KEY="${VITE_SUPABASE_ANON_KEY:-}"
+          fi
+          if [ -z "$AUTH_KEY" ]; then
+            echo "Missing Supabase auth key (set SUPABASE_ANON_KEY or VITE_SUPABASE_ANON_KEY in GitHub Actions secrets)."
+            exit 1
           fi
           AUTH_HEADERS=()
           if [ -n "$AUTH_KEY" ]; then
@@ -69,6 +77,7 @@ jobs:
             call_fn "send-unread-message-alerts"
             call_fn "release-held-payments"
             call_fn "send-review-invites"
+            call_fn "reconcile-payments"
             exit 0
           fi
 
@@ -77,6 +86,7 @@ jobs:
             "*/10 * * * *")
               call_fn "expire-pending-bookings"
               call_fn "send-unread-message-alerts"
+              call_fn "reconcile-payments"
               ;;
             "* * * * *")
               call_fn "emails"

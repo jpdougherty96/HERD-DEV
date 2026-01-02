@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std/http/server.ts";
 import Stripe from "npm:stripe";
 import { requireAuth } from "../_shared/auth.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
+import { getStripe } from "../_shared/stripe.ts";
 import { createAdminClient } from "../_shared/supabase.ts";
 
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY");
@@ -17,7 +18,7 @@ if (!STRIPE_SECRET_KEY || !SUPABASE_URL || !SERVICE_ROLE_KEY) {
   );
 }
 
-const stripe = new Stripe(STRIPE_SECRET_KEY!, { apiVersion: "2024-06-20" });
+const stripe = getStripe(STRIPE_SECRET_KEY!, Stripe);
 const admin = createAdminClient();
 
 const matches = (pathname: string, suffix: string) =>

@@ -9,6 +9,7 @@ create unique index if not exists bookings_stripe_checkout_session_id_key
 // supabase/functions/stripe-webhook/index.ts
 import Stripe from "https://esm.sh/stripe@14?target=denonext";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
+import { getStripe } from "../_shared/stripe.ts";
 import { createAdminClient } from "../_shared/supabase.ts";
 
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY");
@@ -25,7 +26,7 @@ if (!STRIPE_SECRET_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   throw new Error("Missing required environment variables");
 }
 
-const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2025-02-24.acacia" });
+const stripe = getStripe(STRIPE_SECRET_KEY, Stripe);
 const cryptoProvider = Stripe.createSubtleCryptoProvider();
 const supabase = createAdminClient();
 
@@ -132,7 +133,7 @@ Deno.serve(async (req: Request) => {
         const paymentIntentId =
           typeof s.payment_intent === "string"
             ? s.payment_intent
-            : s.payment_intent?.id || null;
+            : s.payment_intent?.id ?? null;
 
         // Parse student names
         let studentNames: string[] = [];
@@ -158,11 +159,6 @@ Deno.serve(async (req: Request) => {
           }
         }
 
-        if (!class_id || !user_id) {
-          console.warn("[webhook] ⚠️ Missing class_id or user_id in metadata — cannot create booking");
-          break;
-        }
-
         // Booking-level idempotency: if a booking already exists for this session, stop.
         try {
           const { data: existing } = await supabase
@@ -179,11 +175,133 @@ Deno.serve(async (req: Request) => {
           console.warn("[webhook] ⚠️ Could not check existing booking; proceeding", e);
         }
 
+        const holdNow = new Date().toISOString();
+        const { data: hold, error: holdErr } = await supabase
+          .from("booking_holds")
+          .update({ status: "CONSUMED" })
+          .eq("stripe_checkout_session_id", s.id)
+          .eq("status", "HELD")
+          .gt("expires_at", holdNow)
+          .select("id, class_id, guest_id, quantity")
+          .maybeSingle();
+
+        if (holdErr) {
+          console.error("[webhook] ❌ booking_holds update error", holdErr);
+        }
+
+        if (hold && class_id && hold.class_id !== class_id) {
+          console.warn(`[webhook] ⚠️ Hold class mismatch (hold=${hold.class_id}, metadata=${class_id})`);
+        }
+
+        if (hold && user_id && hold.guest_id !== user_id) {
+          console.warn(`[webhook] ⚠️ Hold user mismatch (hold=${hold.guest_id}, metadata=${user_id})`);
+        }
+
+        const resolvedClassId = hold?.class_id ?? class_id;
+        const resolvedUserId = hold?.guest_id ?? user_id;
+        const resolvedQty =
+          typeof hold?.quantity === "number" && Number.isFinite(hold.quantity) ? hold.quantity : qty;
+
+        if (!resolvedClassId || !resolvedUserId) {
+          console.warn("[webhook] ⚠️ Missing class_id or user_id — cannot create booking");
+          break;
+        }
+
+        const holdValid = Boolean(hold);
+        let refundId: string | null = null;
+        let refundStatus: string | null = null;
+        let refundError: string | null = null;
+        let refundWasExisting = false;
+
+        if (!holdValid) {
+          if (paymentIntentId) {
+            try {
+              const existingRefunds = await stripe.refunds.list({
+                payment_intent: paymentIntentId,
+                limit: 1,
+              });
+
+              if (existingRefunds.data.length > 0) {
+                refundId = existingRefunds.data[0].id;
+                refundStatus = existingRefunds.data[0].status ?? null;
+                refundWasExisting = true;
+              } else {
+                const refund = await stripe.refunds.create(
+                  {
+                    payment_intent: paymentIntentId,
+                    reason: "requested_by_customer",
+                  },
+                  { idempotencyKey: `hold_invalid_${s.id}` },
+                );
+                refundId = refund.id;
+                refundStatus = refund.status ?? null;
+              }
+            } catch (refundErr) {
+              refundError = refundErr instanceof Error ? refundErr.message : String(refundErr);
+              console.error(`[webhook] ❌ Refund failed for session ${s.id}`, refundErr);
+            }
+          } else {
+            refundError = "Missing payment_intent for refund";
+            console.warn(`[webhook] ⚠️ ${refundError} (session=${s.id})`);
+          }
+
+          if (refundId) {
+            const statusLabel = refundStatus ? `status=${refundStatus}` : "status=unknown";
+            const prefix = refundWasExisting ? "Existing" : "Created";
+            console.log(`[webhook] 💸 ${prefix} refund ${refundId} for session ${s.id} (${statusLabel})`);
+          }
+
+          if (refundId || refundError) {
+            const { data: logRow, error: logReadErr } = await supabase
+              .from("webhook_logs")
+              .select("payload")
+              .eq("stripe_id", event.id)
+              .maybeSingle();
+
+            if (logReadErr) {
+              console.warn("[webhook] ⚠️ Failed to read webhook_logs payload", logReadErr);
+            }
+
+            const existingPayload =
+              logRow && typeof logRow.payload === "object" && logRow.payload !== null ? logRow.payload : {};
+            const merged = {
+              ...existingPayload,
+              herd: {
+                hold_valid: false,
+                refund: refundId ? { id: refundId, status: refundStatus } : null,
+                refund_error: refundError,
+              },
+            };
+
+            const { error: refundLogErr } = await supabase
+              .from("webhook_logs")
+              .update({ payload: merged })
+              .eq("stripe_id", event.id);
+
+            if (refundLogErr) {
+              console.warn("[webhook] ⚠️ Failed to store refund info in webhook_logs", refundLogErr);
+            }
+          }
+        }
+        if (!holdValid) {
+          console.warn(`[webhook] ⚠️ No valid booking hold for session ${s.id}`);
+          const { data: spotsNoHolds, error: spotsErr } = await supabase.rpc("available_spots", {
+            class_uuid: resolvedClassId,
+          });
+          if (spotsErr) {
+            console.warn("[webhook] ⚠️ available_spots lookup failed", spotsErr);
+          } else if (typeof spotsNoHolds === "number" && spotsNoHolds < resolvedQty) {
+            console.warn(
+              `[webhook] ⚠️ Insufficient availability for session ${s.id} (needed=${resolvedQty}, available=${spotsNoHolds})`,
+            );
+          }
+        }
+
         // Fetch class info
         const { data: cls, error: clsErr } = await supabase
           .from("classes")
           .select("id, host_id, auto_approve")
-          .eq("id", class_id)
+          .eq("id", resolvedClassId)
           .single();
 
         if (clsErr || !cls) {
@@ -196,17 +314,23 @@ Deno.serve(async (req: Request) => {
         const platform_fee_cents = roundCents(hostPortion * HERD_FEE_RATE);
         const host_payout_cents = roundCents(hostPortion);
 
-        const status = cls.auto_approve ? "APPROVED" : "PENDING";
-        const payment_status = cls.auto_approve ? "HELD" : "PENDING";
+        const status = holdValid ? (cls.auto_approve ? "APPROVED" : "PENDING") : "DENIED";
+        const payment_status = holdValid
+          ? cls.auto_approve
+            ? "HELD"
+            : "PENDING"
+          : refundId
+            ? "REFUNDED"
+            : "FAILED";
 
         // Insert booking
         const { data: inserted, error: insErr } = await supabase
           .from("bookings")
           .insert([
             {
-              class_id,
-              user_id,
-              qty,
+              class_id: resolvedClassId,
+              user_id: resolvedUserId,
+              qty: resolvedQty,
               student_names: studentNames,
               total_cents,
               status,
@@ -228,6 +352,9 @@ Deno.serve(async (req: Request) => {
             break;
           }
           console.error("[webhook] ❌ Failed to insert booking record", insErr);
+          if (holdValid) {
+            await supabase.from("booking_holds").update({ status: "CANCELLED" }).eq("id", hold.id);
+          }
           break;
         }
 
@@ -269,7 +396,7 @@ Deno.serve(async (req: Request) => {
 
         // Queue emails (best-effort)
         try {
-          if (cls.auto_approve) {
+          if (cls.auto_approve && holdValid) {
             await supabase.rpc("enqueue_booking_email_job", {
               _booking_id: bookingId,
               _type: "booking_confirmed_host",

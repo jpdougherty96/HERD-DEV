@@ -1,9 +1,14 @@
 node_modules
 dist
+build
 .env
 .env.local
 .DS_Store
 .vercel
+.vercel/output
+supabase/.temp
+supabase/functions.zip
+*.log
 
 # Environment files
 .env

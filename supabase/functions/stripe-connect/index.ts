@@ -1,10 +1,11 @@
 // Creates (or reuses) an Express account, stores it on profile, returns onboarding link URL
-import Stripe from "https://esm.sh/stripe@16.11.0?target=deno";
+import Stripe from "https://esm.sh/stripe@14?target=denonext";
 import { requireAuth } from "../_shared/auth.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
+import { getStripe } from "../_shared/stripe.ts";
 import { createAdminClient } from "../_shared/supabase.ts";
 
-const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, { apiVersion: "2024-06-20" });
+const stripe = getStripe(Deno.env.get("STRIPE_SECRET_KEY")!, Stripe);
 const supabase = createAdminClient();
 
 Deno.serve(async (req: Request) => {

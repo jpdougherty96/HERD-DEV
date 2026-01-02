@@ -1,7 +1,8 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
-import Stripe from "https://esm.sh/stripe@14.25.0?target=denonext";
+import Stripe from "https://esm.sh/stripe@14?target=denonext";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { requireInternal } from "../_shared/internal.ts";
+import { getStripe } from "../_shared/stripe.ts";
 import { createAdminClient } from "../_shared/supabase.ts";
 
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY");
@@ -13,7 +14,7 @@ if (!STRIPE_SECRET_KEY || !SUPABASE_URL || !SERVICE_ROLE) {
   throw new Error("Missing required environment variables");
 }
 
-const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2025-02-24.acacia" });
+const stripe = getStripe(STRIPE_SECRET_KEY, Stripe);
 const supabase = createAdminClient();
 
 type PendingBookingRow = {

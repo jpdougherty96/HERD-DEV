@@ -14,7 +14,7 @@ const normalizeSiteUrl = (value: string, fallback: string) => {
 };
 
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY")!;
-const BUFFER_HOURS = Number(Deno.env.get("PAYOUT_BUFFER_HOURS") || "24"); // release +24h after class
+const BUFFER_HOURS = 168; // release +7d after class (hard-locked)
 const DEFAULT_SITE_URL = "https://herd.rent";
 const SITE_URL = normalizeSiteUrl(Deno.env.get("SITE_URL") || DEFAULT_SITE_URL, DEFAULT_SITE_URL);
 

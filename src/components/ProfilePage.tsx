@@ -418,8 +418,7 @@ export function ProfilePage({ user, onUpdate }: ProfilePageProps) {
                   <div>
                     <h4 className="font-semibold text-[#1f2b15]">Payout timing</h4>
                     <p className="text-[#556B2F]">
-                      Funds are held when a booking is made and released after the class or rental is completed.
-                      Typical payout time is 2–5 business days.
+                      Funds are held when a booking is made and released 7 days after the class or rental is completed.
                     </p>
                   </div>
 

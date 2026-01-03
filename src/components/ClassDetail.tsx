@@ -146,11 +146,23 @@ export function ClassDetail({ classData, user, onNavigate, onRequireAuth, onView
   const fetchAvailableSpots = useCallback(async () => {
     try {
       setLoadingSpots(true);
-      const { data, error } = await supabase
-        .rpc('available_spots', { class_uuid: classData.id });
+      const { data, error: holdError } = await supabase.rpc('available_spots_with_holds', {
+        class_uuid: classData.id,
+      });
 
-      if (error) throw error;
-      setAvailableSpots(typeof data === 'number' ? data : null);
+      if (!holdError && typeof data === 'number') {
+        setAvailableSpots(Math.max(0, data));
+        return;
+      }
+      if (holdError) {
+        console.warn('Failed to fetch spots with holds:', holdError);
+      }
+
+      const { data: fallbackData, error: fallbackError } = await supabase.rpc('available_spots', {
+        class_uuid: classData.id,
+      });
+      if (fallbackError) throw fallbackError;
+      setAvailableSpots(typeof fallbackData === 'number' ? Math.max(0, fallbackData) : null);
     } catch (e: any) {
       console.warn('Failed to fetch available spots (RPC):', e?.message || e);
       setAvailableSpots(null);

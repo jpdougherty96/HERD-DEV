@@ -126,13 +126,26 @@ export function BookingModal({ classData, user, onClose, onBookingSuccess, initi
     const fetchSeats = async () => {
       try {
         setLoadingSeats(true);
-        const { data, error: rpcError } = await supabase.rpc('available_spots', { class_uuid: classData.id });
+        const { data, error: holdError } = await supabase.rpc('available_spots_with_holds', {
+          class_uuid: classData.id,
+        });
+        if (!cancelled && !holdError && typeof data === 'number') {
+          setAvailableSeats(Math.max(0, data));
+          return;
+        }
+        if (holdError) {
+          console.warn('Failed to load available spots with holds:', holdError);
+        }
+
+        const { data: fallbackData, error: fallbackError } = await supabase.rpc('available_spots', {
+          class_uuid: classData.id,
+        });
         if (!cancelled) {
-          if (rpcError) {
-            console.warn('Failed to load available spots:', rpcError);
+          if (fallbackError) {
+            console.warn('Failed to load available spots:', fallbackError);
             setAvailableSeats(null);
           } else {
-            setAvailableSeats(typeof data === 'number' ? Math.max(0, data) : null);
+            setAvailableSeats(typeof fallbackData === 'number' ? Math.max(0, fallbackData) : null);
           }
         }
       } catch (rpcErr) {

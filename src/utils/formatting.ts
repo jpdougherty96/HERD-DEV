@@ -72,13 +72,20 @@ export const formatTimeDisplay = formatTime;
 
 export const formatPrice = (
   value: number | string | null | undefined,
-  options: { withCurrency?: boolean } = {},
+  options: { withCurrency?: boolean; assumeInputIsCents?: boolean } = {},
 ): string => {
-  const cents = normalizeToCents(value);
+  const { withCurrency = false, assumeInputIsCents = false } = options;
+  const cents = assumeInputIsCents
+    ? (() => {
+        const numeric =
+          typeof value === "number" ? value : Number(value ?? 0);
+        return Number.isFinite(numeric) ? Math.round(numeric) : 0;
+      })()
+    : normalizeToCents(value);
   const dollars = cents / 100;
   const formatted = dollars.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-  return options.withCurrency ? `$${formatted}` : formatted;
+  return withCurrency ? `$${formatted}` : formatted;
 };

@@ -83,8 +83,8 @@ begin
     else array_to_string(v.student_names, ', ')
   end;
 
-  host_dashboard_base := coalesce(current_setting('app.host_dashboard_url', true), 'https://herdstaging.dev/dashboard');
-  guest_dashboard_base := coalesce(current_setting('app.guest_dashboard_url', true), 'https://herdstaging.dev/dashboard/guestview');
+  host_dashboard_base := coalesce(current_setting('app.host_dashboard_url', true), 'https://herd.rent/dashboard');
+  guest_dashboard_base := coalesce(current_setting('app.guest_dashboard_url', true), 'https://herd.rent/dashboard/guestview');
 
   approve_url := host_dashboard_base || '?role=host&tab=bookings&booking=' || v.booking_id || '&action=approve';
   decline_url := host_dashboard_base || '?role=host&tab=bookings&booking=' || v.booking_id || '&action=deny';

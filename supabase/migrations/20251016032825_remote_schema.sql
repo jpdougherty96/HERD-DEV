@@ -135,7 +135,7 @@ begin
   -- Build host dashboard URLs (from a DB setting or static fallback)
   approve_base := coalesce(
     current_setting('app.host_dashboard_url', true),
-    'https://herdstaging.dev/dashboard'
+    'https://herd.rent/dashboard'
   );
 
   approve_url := approve_base || '/bookings/' || v.booking_id || '?action=approve';

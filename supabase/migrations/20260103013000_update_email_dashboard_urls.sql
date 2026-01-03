@@ -1,4 +1,13 @@
--- Update enqueue_booking_email_job fallbacks to staging domain
+-- Ensure email dashboard URLs use herd.rent
+
+do $$
+declare
+  db text := current_database();
+begin
+  execute format('alter database %I set app.host_dashboard_url = %L', db, 'https://herd.rent/dashboard');
+  execute format('alter database %I set app.guest_dashboard_url = %L', db, 'https://herd.rent/dashboard/guestview');
+end $$;
+
 create or replace function public.enqueue_booking_email_job(
   _booking_id uuid,
   _type text,
@@ -94,12 +103,9 @@ begin
     guest_booking_url := guest_booking_url || '&booking=' || v.booking_id;
   end if;
 
-  host_booking_url := host_dashboard_base;
-  if position('tab=' in host_booking_url) = 0 then
-    host_booking_url := host_booking_url || '?role=host&tab=bookings';
-  end if;
+  host_booking_url := host_dashboard_base || '?role=host&tab=bookings';
   if v.booking_id is not null then
-    host_booking_url := host_booking_url || (case when host_booking_url like '%booking=%' then '' else '&booking=' end) || v.booking_id;
+    host_booking_url := host_booking_url || '&booking=' || v.booking_id;
   end if;
 
   _vars := coalesce(_vars, '{}'::jsonb) || jsonb_build_object(

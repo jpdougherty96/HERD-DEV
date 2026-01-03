@@ -7,6 +7,9 @@ const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ?? "")
 export function getAllowedOrigin(req: Request): string | null {
   const origin = req.headers.get("origin");
   if (!origin) return null;
+  if (origin.startsWith("http://localhost") || origin.startsWith("http://127.0.0.1")) {
+    return origin;
+  }
   return ALLOWED_ORIGINS.includes(origin) ? origin : null;
 }
 

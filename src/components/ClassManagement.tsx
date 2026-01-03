@@ -5,6 +5,8 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { Textarea } from './ui/textarea';
 import {
   ArrowLeft,
   Calendar,
@@ -25,6 +27,13 @@ import { BroadcastMessageModal } from './BroadcastMessageModal';
 import { formatDateRangeShort, formatPrice, formatTime } from '@/utils/formatting';
 import { supabase } from '../utils/supabaseClient';
 import { toast } from 'sonner@2.0.3';
+
+const HERD_FEE_RATE = 0.15;
+const functionsBase = (
+  import.meta.env.VITE_SUPABASE_FUNCTIONS_BASE
+  ?? import.meta.env.VITE_SUPABASE_URL?.replace(".supabase.co", ".functions.supabase.co")
+  ?? ""
+).replace(/\/$/, "");
 
 interface Booking {
   id: string;
@@ -72,6 +81,7 @@ export function ClassManagement({ classData, user, onNavigate, onDeleteClass, on
   const [loading, setLoading] = useState(true);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [denialMessage, setDenialMessage] = useState('');
+  const [actionInFlight, setActionInFlight] = useState(false);
   const [isEditingCapacity, setIsEditingCapacity] = useState(false);
   const [capacityInput, setCapacityInput] = useState<string>(() => String(classData.maxStudents));
   const [isSavingCapacity, setIsSavingCapacity] = useState(false);
@@ -112,6 +122,8 @@ export function ClassManagement({ classData, user, onNavigate, onDeleteClass, on
       }
 
       const items = Array.isArray(data) ? data : [];
+      const estimateStripeFeeCents = (totalCents: number) =>
+        Math.round(totalCents * 0.029 + 30);
       const mapped = items.map((b: any) => {
         const toCents = (value: any) => Math.max(0, Math.round(Number(value ?? 0)));
         const rawNames = Array.isArray(b.studentNames)
@@ -127,6 +139,27 @@ export function ClassManagement({ classData, user, onNavigate, onDeleteClass, on
           .filter(Boolean);
 
         const qty = Number(b.qty ?? 0);
+        const resolvedQty = Number.isFinite(qty) && qty > 0 ? qty : studentNames.length || 1;
+
+        const herdFee = toCents(b.platform_fee_cents);
+        const hostPayout = toCents(b.host_payout_cents);
+        let totalAmount = toCents(b.total_cents);
+        if (!totalAmount && (hostPayout > 0 || herdFee > 0)) {
+          totalAmount = hostPayout + herdFee;
+        }
+
+        const expectedTotal =
+          classData.pricePerPerson > 0
+            ? Math.round(classData.pricePerPerson * resolvedQty * (1 + HERD_FEE_RATE))
+            : 0;
+        let grossTotal = expectedTotal > 0 ? expectedTotal : totalAmount;
+        if (!grossTotal && (hostPayout > 0 || herdFee > 0)) {
+          grossTotal = hostPayout + herdFee;
+        }
+
+        const stripeFee =
+          grossTotal > 0 ? estimateStripeFeeCents(grossTotal) : 0;
+        const subtotal = grossTotal > 0 ? Math.max(0, grossTotal - stripeFee) : 0;
 
         return {
           id: b.id,
@@ -137,11 +170,11 @@ export function ClassManagement({ classData, user, onNavigate, onDeleteClass, on
           hostId: classData.hostId,
           hostEmail: '',
           hostName: classData.hostName || user.name,
-          studentCount: qty > 0 ? qty : studentNames.length || 1,
+          studentCount: resolvedQty,
           studentNames,
-          totalAmount: toCents(b.total_cents),
-          subtotal: toCents(b.host_payout_cents),
-          herdFee: toCents(b.platform_fee_cents),
+          totalAmount: grossTotal,
+          subtotal,
+          herdFee,
           status: (b.status || 'PENDING').toUpperCase(),
           paymentStatus: (b.payment_status || 'PENDING').toUpperCase(),
           createdAt: b.created_at || '',
@@ -162,6 +195,56 @@ export function ClassManagement({ classData, user, onNavigate, onDeleteClass, on
     }
   };
 
+  const handleBookingResponse = async (
+    bookingId: string,
+    action: 'approve' | 'deny',
+    message?: string,
+  ) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast.error('Please sign in again to manage bookings.');
+        return;
+      }
+
+      setActionInFlight(true);
+      const functionName = action === 'approve' ? 'approve-booking' : 'deny-booking';
+      const endpoint = `${functionsBase}/${functionName}`;
+      const payload =
+        action === 'approve'
+          ? { booking_id: bookingId }
+          : { booking_id: bookingId, message: message ?? '' };
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.error) {
+        throw new Error(data.error || `Failed to ${action} booking`);
+      }
+
+      if (action === 'approve') {
+        toast.success('Booking approved — payment captured and emails queued!');
+      } else {
+        toast.success('Booking denied and guest notified.');
+      }
+
+      await fetchClassBookings();
+      setSelectedBooking(null);
+      setDenialMessage('');
+    } catch (error: any) {
+      console.error('❌ Error responding to booking:', error);
+      toast.error(error?.message || 'An error occurred while processing your response.');
+    } finally {
+      setActionInFlight(false);
+    }
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       month: 'short',
@@ -174,6 +257,71 @@ export function ClassManagement({ classData, user, onNavigate, onDeleteClass, on
     const range = formatDateRangeShort(startDate, endDate);
     if (range) return range;
     return startDate ? formatDate(startDate) : 'Date TBD';
+  };
+
+  const renderBookingModal = () => {
+    if (!selectedBooking) return null;
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[9999]">
+        <Card className="bg-[#ffffff] border-[#a8b892] max-w-md w-full">
+          <CardHeader className="bg-[#c54a2c] text-[#f8f9f6]">
+            <CardTitle className="text-lg">Deny Booking Request</CardTitle>
+          </CardHeader>
+          <CardContent className="p-6 space-y-4">
+            <div>
+              <p className="text-sm text-[#556B2F] mb-2">
+                <strong>Guest:</strong> {selectedBooking.userName}
+              </p>
+              <p className="text-sm text-[#556B2F] mb-2">
+                <strong>Class:</strong> {classData.title}
+              </p>
+              <p className="text-sm text-[#556B2F] mb-4">
+                <strong>Students:</strong> {selectedBooking.studentCount}{' '}
+                {selectedBooking.studentNames.length > 0
+                  ? `(${selectedBooking.studentNames.join(', ')})`
+                  : '(Guest did not provide names)'}
+              </p>
+            </div>
+
+            <div>
+              <Label htmlFor="denialMessage">Reason for denial (optional)</Label>
+              <Textarea
+                id="denialMessage"
+                placeholder="Let the guest know why you can't accommodate their booking..."
+                value={denialMessage}
+                onChange={(e) => setDenialMessage(e.target.value)}
+                className="mt-1"
+                rows={3}
+                autoFocus
+              />
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSelectedBooking(null);
+                  setDenialMessage('');
+                }}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={actionInFlight}
+                onClick={() =>
+                  handleBookingResponse(selectedBooking.id, 'deny', denialMessage)
+                }
+                className="flex-1"
+              >
+                {actionInFlight ? 'Processing...' : 'Deny Booking'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
   };
 
   const getStatusColor = (status: string) => {
@@ -282,7 +430,7 @@ export function ClassManagement({ classData, user, onNavigate, onDeleteClass, on
     setIsEditingCapacity(false);
   };
   const totalRevenueCents = APPROVEDBookings.reduce((sum, b) => sum + b.subtotal, 0);
-  const totalRevenueDisplay = formatPrice(totalRevenueCents, { withCurrency: true });
+  const totalRevenueDisplay = formatPrice(totalRevenueCents, { withCurrency: true, assumeInputIsCents: true });
   const totalStudents = APPROVEDBookings.reduce((sum, b) => sum + b.studentCount, 0);
 
   return (
@@ -708,7 +856,7 @@ export function ClassManagement({ classData, user, onNavigate, onDeleteClass, on
                           <p><strong>Email:</strong> {booking.userEmail}</p>
                           <p><strong>Students:</strong> {booking.studentCount}</p>
                           <p><strong>Names:</strong> {booking.studentNames.join(', ')}</p>
-                          <p><strong>Your earnings:</strong> {formatPrice(displayedEarnings, { withCurrency: true })}</p>
+                          <p><strong>Your earnings:</strong> {formatPrice(displayedEarnings, { withCurrency: true, assumeInputIsCents: true })}</p>
                           <p><strong>Booked:</strong> {formatDate(booking.createdAt)}</p>
                           <p><strong>Payment:</strong> {booking.paymentStatus}</p>
                         </div>
@@ -726,9 +874,9 @@ export function ClassManagement({ classData, user, onNavigate, onDeleteClass, on
                             size="sm"
                             className="bg-green-600 hover:bg-green-700 text-white"
                             onClick={() => {
-                              // Handle booking approval
-                              toast.info('Booking approval functionality will be integrated with the existing system');
+                              handleBookingResponse(booking.id, 'approve');
                             }}
+                            disabled={actionInFlight}
                           >
                             <CheckCircle className="h-4 w-4 mr-1" />
                             Approve

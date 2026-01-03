@@ -20,6 +20,7 @@ const functionsBase = (
   ?? import.meta.env.VITE_SUPABASE_URL?.replace(".supabase.co", ".functions.supabase.co")
   ?? ""
 ).replace(/\/$/, "");
+const HERD_FEE_RATE = 0.15;
 
 // New booking type for our system
 interface HerdBooking {
@@ -34,7 +35,7 @@ interface HerdBooking {
   studentCount: number;
   studentNames: string[];
   totalAmount: number;
-  subtotal: number; // host payout (cents)
+  subtotal: number; // gross earnings (total charged minus Stripe fee, cents)
   herdFee: number;  // platform fee (cents)
   status: 'PENDING' | 'APPROVED' | 'DENIED' | 'FAILED' | 'PAID' | 'CANCELLED' | 'REFUNDED';
   paymentStatus: 'PENDING' | 'COMPLETED' | 'FAILED' | 'REFUNDED' | 'HELD' | 'PAID';
@@ -142,7 +143,7 @@ export function HostDashboard({
     (sum, booking) => sum + (booking.subtotal || 0),
     0
   );
-  const totalRevenueDisplay = formatPrice(totalRevenueCents, { withCurrency: true });
+  const totalRevenueDisplay = formatPrice(totalRevenueCents, { withCurrency: true, assumeInputIsCents: true });
 
   const recentIncomingMessages = useMemo(() => {
     const getTime = (value?: string) => (value ? new Date(value).getTime() : 0);
@@ -213,7 +214,7 @@ export function HostDashboard({
   // Load bookings
   useEffect(() => {
     fetchBookings();
-  }, [user.id]);
+  }, [user.id, classes]);
 
   // ✅ Fetch bookings via Edge Function to access full booking metadata (incl. student names)
   const fetchBookings = async () => {
@@ -234,6 +235,8 @@ export function HostDashboard({
       }
 
       const items = Array.isArray(data) ? data : [];
+      const estimateStripeFeeCents = (totalCents: number) =>
+        Math.round(totalCents * 0.029 + 30);
 
       const mapped = items.map((b: any) => {
         const toCents = (value: any) => {
@@ -265,13 +268,29 @@ export function HostDashboard({
           ? studentCountRaw
           : studentNamesArray.length || 1;
 
-        const totalAmount = toCents(b.total_cents);
         const herdFee = toCents(b.platform_fee_cents);
-        const hasHostPayout = b.host_payout_cents !== null && b.host_payout_cents !== undefined;
-        let subtotal = hasHostPayout ? toCents(b.host_payout_cents) : 0;
-        if (!hasHostPayout && totalAmount > 0) {
-          subtotal = herdFee > 0 && herdFee < totalAmount ? totalAmount - herdFee : totalAmount;
+        const hostPayout = toCents(b.host_payout_cents);
+        const classPriceCents =
+          classes.find((cls) => cls.id === b.class_id)?.pricePerPerson ?? 0;
+        const qtyRaw = Number(b.qty ?? studentCount);
+        const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : studentCount;
+        const expectedTotal =
+          classPriceCents > 0
+            ? Math.round(classPriceCents * qty * (1 + HERD_FEE_RATE))
+            : 0;
+
+        let totalAmount = toCents(b.total_cents);
+        if (!totalAmount && (hostPayout > 0 || herdFee > 0)) {
+          totalAmount = hostPayout + herdFee;
         }
+        let grossTotal = expectedTotal > 0 ? expectedTotal : totalAmount;
+        if (!grossTotal && (hostPayout > 0 || herdFee > 0)) {
+          grossTotal = hostPayout + herdFee;
+        }
+
+        const stripeFee =
+          grossTotal > 0 ? estimateStripeFeeCents(grossTotal) : 0;
+        const subtotal = grossTotal > 0 ? Math.max(0, grossTotal - stripeFee) : 0;
 
         return {
           id: b.id,
@@ -284,7 +303,7 @@ export function HostDashboard({
           hostName: user.name,
           studentCount,
           studentNames: studentNamesArray,
-          totalAmount,
+          totalAmount: grossTotal,
           subtotal,
           herdFee,
           status: normalizedStatus,
@@ -1024,9 +1043,7 @@ export function HostDashboard({
             {orderedBookings.map((booking) => {
               const classData = classes.find(c => c.id === booking.classId);
               const displayedEarnings =
-                booking.status !== 'DENIED' && eligiblePaymentStatuses.has(booking.paymentStatus)
-                  ? booking.subtotal
-                  : 0;
+                booking.status !== 'DENIED' ? booking.subtotal : 0;
               return (
                 <Card key={booking.id}>
                   <CardContent className="p-4 md:p-6">
@@ -1047,7 +1064,7 @@ export function HostDashboard({
                           <div>
                             <p className="text-sm text-[#556B2F]"><strong>Students:</strong> {booking.studentCount}</p>
                             <p className="text-sm text-[#556B2F]">
-                              <strong>Your earnings:</strong> {formatPrice(displayedEarnings, { withCurrency: true })}
+                              <strong>Your earnings:</strong> {formatPrice(displayedEarnings, { withCurrency: true, assumeInputIsCents: true })}
                             </p>
                           </div>
                         </div>

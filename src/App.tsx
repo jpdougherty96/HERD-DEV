@@ -731,6 +731,9 @@ export default function App() {
       if (authSession === undefined || loading) {
         return;
       }
+      if (authSession?.user) {
+        return;
+      }
       setShowAuthModal(true);
       return;
     }
@@ -749,6 +752,9 @@ export default function App() {
     if (!pendingHostDashboardRoute) return;
     if (!user) {
       if (authSession === undefined || loading) {
+        return;
+      }
+      if (authSession?.user) {
         return;
       }
       setShowAuthModal(true);

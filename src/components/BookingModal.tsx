@@ -4,11 +4,18 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Checkbox } from './ui/checkbox';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { X, Users, DollarSign, Calendar, Clock, MapPin, AlertTriangle } from 'lucide-react';
 import type { Class, User } from '../App';
 import { supabase } from '../utils/supabaseClient';
 import { normalizeToCents } from '../utils/money';
 import { formatDateRangeDisplay, formatTime as formatTimeDisplay } from "@/utils/formatting";
+import {
+  LIABILITY_BODY,
+  LIABILITY_CHECKBOX_LABEL,
+  LIABILITY_TITLE,
+  LIABILITY_VERSION,
+} from "@/utils/liability";
 
 async function startPayment(
   classId: string,
@@ -16,6 +23,8 @@ async function startPayment(
   accessToken: string,
   qty: number,
   studentNames: string[],
+  liabilityAccepted: boolean,
+  liabilityVersion: string,
 ) {
   const { data, error, response } = await supabase.functions.invoke('create-checkout-session', {
     body: {
@@ -23,6 +32,8 @@ async function startPayment(
       user_id: userId,
       qty,
       student_names: studentNames,
+      liability_accepted: liabilityAccepted,
+      liability_version: liabilityVersion,
     },
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -64,6 +75,7 @@ export function BookingModal({ classData, user, onClose, onBookingSuccess, initi
   const [numberOfStudents, setNumberOfStudents] = useState(1);
   const [studentNames, setStudentNames] = useState<string[]>(['']);
   const [liabilityAccepted, setLiabilityAccepted] = useState(false);
+  const [agreementOpen, setAgreementOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [availableSeats, setAvailableSeats] = useState<number | null>(
@@ -201,7 +213,15 @@ export function BookingModal({ classData, user, onClose, onBookingSuccess, initi
         return;
       }
 
-      await startPayment(classData.id, userId, session.access_token, numberOfStudents, normalizedNames);
+      await startPayment(
+        classData.id,
+        userId,
+        session.access_token,
+        numberOfStudents,
+        normalizedNames,
+        liabilityAccepted,
+        LIABILITY_VERSION,
+      );
     } catch (err: any) {
       console.error('Booking error:', err);
       setError(err?.message || 'An error occurred while starting your checkout. Please try again.');
@@ -308,9 +328,16 @@ export function BookingModal({ classData, user, onClose, onBookingSuccess, initi
                       className="mt-1"
                     />
                     <Label htmlFor="liability" className="text-sm cursor-pointer">
-                      By checking this box, I acknowledge that I understand the risks involved in this homesteading class and release both HERD and the class host from any liability for injuries or damages that may occur during the class activities. I participate at my own risk and agree to follow all safety instructions provided by the host.
+                      {LIABILITY_CHECKBOX_LABEL}
                     </Label>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setAgreementOpen(true)}
+                    className="text-xs text-[#556B2F] underline mt-2"
+                  >
+                    View agreement
+                  </button>
                 </div>
               </div>
             </div>
@@ -334,6 +361,19 @@ export function BookingModal({ classData, user, onClose, onBookingSuccess, initi
           </div>
         </CardContent>
       </Card>
+      <Dialog open={agreementOpen} onOpenChange={setAgreementOpen}>
+        <DialogContent className="max-w-2xl bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-[#2d3d1f]">{LIABILITY_TITLE}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm text-[#2d3d1f]">
+            {LIABILITY_BODY.map((paragraph) => (
+              <p key={paragraph}>{paragraph}</p>
+            ))}
+          </div>
+          <p className="text-xs text-[#6b7280] mt-4">Version: {LIABILITY_VERSION}</p>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

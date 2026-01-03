@@ -6,6 +6,7 @@ import { Resend } from "https://esm.sh/resend@3.2.0";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { requireInternal } from "../_shared/internal.ts";
 import { createAdminClient } from "../_shared/supabase.ts";
+import { LIABILITY_VERSION } from "../_shared/liability.ts";
 
 // Setup clients
 const supabase = createAdminClient();
@@ -161,6 +162,7 @@ function renderEmailHTML(type: EmailType, v: EmailVars): string {
             Your earnings: <strong>${formatCurrency(v.HOST_EARNINGS)}</strong>
           `.trim()
         )}
+        <p>You agreed to the HERD Liability & Conduct Agreement (Version ${LIABILITY_VERSION}) at the time of booking.</p>
         ${button("View Booking", v.BOOKING_URL || hostBookingsUrl)}
       `;
       break;
@@ -178,6 +180,7 @@ function renderEmailHTML(type: EmailType, v: EmailVars): string {
           `.trim()
         )}
         ${section("Total Paid", `<strong>${formatCurrency(v.TOTAL_AMOUNT || v.TOTAL_COLLECTED)}</strong>`)}
+        <p>You agreed to the HERD Liability & Conduct Agreement (Version ${LIABILITY_VERSION}) at the time of booking.</p>
         ${button("View Booking", v.BOOKING_URL || guestBookingsUrl)}
       `;
       break;

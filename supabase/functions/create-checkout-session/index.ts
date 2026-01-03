@@ -5,6 +5,7 @@ import { requireAuth } from "../_shared/auth.ts";
 import { corsHeaders, getAllowedOrigin, handleCors } from "../_shared/cors.ts";
 import { getStripe } from "../_shared/stripe.ts";
 import { createAdminClient } from "../_shared/supabase.ts";
+import { LIABILITY_VERSION } from "../_shared/liability.ts";
 
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY")!;
 const DEFAULT_SITE_URL = "https://herd.rent";
@@ -38,9 +39,29 @@ serve(async (_req: Request) => {
       });
     }
 
-    const { class_id, user_id, qty = 1, student_names } = await _req.json();
+    const { class_id, user_id, qty = 1, student_names, liability_accepted, liability_version } =
+      await _req.json();
     if (!class_id) {
       return new Response(JSON.stringify({ error: "Missing class_id" }), {
+        status: 400,
+        headers: { ...cors, "Content-Type": "application/json" },
+      });
+    }
+
+    const liabilityAccepted =
+      liability_accepted === true || liability_accepted === "true" || liability_accepted === 1;
+    if (!liabilityAccepted) {
+      return new Response(
+        JSON.stringify({ error: "You must accept the HERD Liability & Conduct Agreement to book." }),
+        {
+          status: 400,
+          headers: { ...cors, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (typeof liability_version === "string" && liability_version !== LIABILITY_VERSION) {
+      return new Response(JSON.stringify({ error: "Liability agreement version mismatch. Please refresh and try again." }), {
         status: 400,
         headers: { ...cors, "Content-Type": "application/json" },
       });
@@ -175,6 +196,8 @@ serve(async (_req: Request) => {
           qty: String(requestedQty),
           student_names: JSON.stringify(studentNames),
           transfer_group: transferGroup,
+          liability_accepted: "true",
+          liability_version: LIABILITY_VERSION,
         },
         payment_intent_data: {
           metadata: {
@@ -183,6 +206,8 @@ serve(async (_req: Request) => {
             qty: String(requestedQty),
             student_names: JSON.stringify(studentNames),
             transfer_group: transferGroup,
+            liability_accepted: "true",
+            liability_version: LIABILITY_VERSION,
           },
           capture_method,
           transfer_group: transferGroup,

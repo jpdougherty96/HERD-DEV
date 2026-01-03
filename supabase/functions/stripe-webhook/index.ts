@@ -11,6 +11,7 @@ import Stripe from "https://esm.sh/stripe@14?target=denonext";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { getStripe } from "../_shared/stripe.ts";
 import { createAdminClient } from "../_shared/supabase.ts";
+import { LIABILITY_VERSION } from "../_shared/liability.ts";
 
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY");
 const STRIPE_WEBHOOK_SECRET = Deno.env.get("STRIPE_WEBHOOK_SECRET");
@@ -125,6 +126,16 @@ Deno.serve(async (req: Request) => {
       case "checkout.session.completed": {
         const s = event.data.object as Stripe.Checkout.Session;
         const metadata = s.metadata || {};
+        const paymentIntentMetadata =
+          typeof s.payment_intent === "object" && s.payment_intent
+            ? s.payment_intent.metadata ?? {}
+            : {};
+        const readMetadataValue = (key: string): string | undefined => {
+          const sessionValue = metadata[key];
+          if (typeof sessionValue === "string") return sessionValue;
+          const piValue = (paymentIntentMetadata as Record<string, string | undefined>)[key];
+          return typeof piValue === "string" ? piValue : undefined;
+        };
         const class_id = (metadata.class_id as string | undefined) ?? null;
         const user_id = (metadata.user_id as string | undefined) ?? null;
         const qty = Number(metadata.qty || 1);
@@ -158,6 +169,11 @@ Deno.serve(async (req: Request) => {
               .filter((name) => name.length > 0);
           }
         }
+
+        const liabilityAcceptedRaw = readMetadataValue("liability_accepted");
+        const liabilityVersion = readMetadataValue("liability_version") ?? null;
+        const liabilityAccepted = liabilityAcceptedRaw === "true" || liabilityAcceptedRaw === "1";
+        const liabilityValid = liabilityAccepted && liabilityVersion === LIABILITY_VERSION;
 
         // Booking-level idempotency: if a booking already exists for this session, stop.
         try {
@@ -213,7 +229,12 @@ Deno.serve(async (req: Request) => {
         let refundError: string | null = null;
         let refundWasExisting = false;
 
-        if (!holdValid) {
+        const attemptRefund = async (idempotencyKey: string) => {
+          refundId = null;
+          refundStatus = null;
+          refundError = null;
+          refundWasExisting = false;
+
           if (paymentIntentId) {
             try {
               const existingRefunds = await stripe.refunds.list({
@@ -231,7 +252,7 @@ Deno.serve(async (req: Request) => {
                     payment_intent: paymentIntentId,
                     reason: "requested_by_customer",
                   },
-                  { idempotencyKey: `hold_invalid_${s.id}` },
+                  { idempotencyKey },
                 );
                 refundId = refund.id;
                 refundStatus = refund.status ?? null;
@@ -244,6 +265,64 @@ Deno.serve(async (req: Request) => {
             refundError = "Missing payment_intent for refund";
             console.warn(`[webhook] ⚠️ ${refundError} (session=${s.id})`);
           }
+        };
+
+        if (!liabilityValid) {
+          await attemptRefund(`liability_invalid_${s.id}`);
+
+          if (refundId) {
+            const statusLabel = refundStatus ? `status=${refundStatus}` : "status=unknown";
+            const prefix = refundWasExisting ? "Existing" : "Created";
+            console.log(`[webhook] 💸 ${prefix} refund ${refundId} for session ${s.id} (${statusLabel})`);
+          }
+
+          if (refundId || refundError) {
+            const { data: logRow, error: logReadErr } = await supabase
+              .from("webhook_logs")
+              .select("payload")
+              .eq("stripe_id", event.id)
+              .maybeSingle();
+
+            if (logReadErr) {
+              console.warn("[webhook] ⚠️ Failed to read webhook_logs payload", logReadErr);
+            }
+
+            const existingPayload =
+              logRow && typeof logRow.payload === "object" && logRow.payload !== null ? logRow.payload : {};
+            const merged = {
+              ...existingPayload,
+              herd: {
+                liability_valid: false,
+                refund: refundId ? { id: refundId, status: refundStatus } : null,
+                refund_error: refundError,
+              },
+            };
+
+            const { error: refundLogErr } = await supabase
+              .from("webhook_logs")
+              .update({ payload: merged })
+              .eq("stripe_id", event.id);
+
+            if (refundLogErr) {
+              console.warn("[webhook] ⚠️ Failed to store refund info in webhook_logs", refundLogErr);
+            }
+          }
+
+          if (hold?.id) {
+            await supabase.from("booking_holds").update({ status: "CANCELLED" }).eq("id", hold.id);
+          } else {
+            await supabase
+              .from("booking_holds")
+              .update({ status: "CANCELLED" })
+              .eq("stripe_checkout_session_id", s.id);
+          }
+
+          console.warn(`[webhook] ⚠️ Liability agreement not accepted for session ${s.id}`);
+          break;
+        }
+
+        if (!holdValid) {
+          await attemptRefund(`hold_invalid_${s.id}`);
 
           if (refundId) {
             const statusLabel = refundStatus ? `status=${refundStatus}` : "status=unknown";
@@ -339,6 +418,9 @@ Deno.serve(async (req: Request) => {
               stripe_payment_intent_id: paymentIntentId,
               platform_fee_cents,
               host_payout_cents,
+              liability_accepted: true,
+              liability_accepted_at: new Date().toISOString(),
+              liability_version: LIABILITY_VERSION,
               created_at: new Date().toISOString(),
             },
           ])

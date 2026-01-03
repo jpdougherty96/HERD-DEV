@@ -504,7 +504,7 @@ export function ClassDetail({ classData, user, onNavigate, onRequireAuth, onView
                         ? classData.auto_approve
                           ? 'Book This Class'
                           : 'Request Booking'
-                        : 'You must be signed in to book a class'}
+                        : 'Sign in to book'}
                   </Button>
                   
                   {/* Message Host / Go to Conversation Button */}

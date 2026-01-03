@@ -31,6 +31,7 @@ export function ProfilePage({ user, onUpdate }: ProfilePageProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [stripeLoading, setStripeLoading] = useState(false);
+  const [showStripeGuide, setShowStripeGuide] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     farmName: "",
@@ -340,9 +341,116 @@ export function ProfilePage({ user, onUpdate }: ProfilePageProps) {
               Connected & Ready
             </div>
           ) : (
-            <Button onClick={handleStripeConnect} disabled={stripeLoading}>
-              {stripeLoading ? "Connecting..." : "Connect Stripe Account"}
-            </Button>
+            <>
+              <Button onClick={handleStripeConnect} disabled={stripeLoading}>
+                {stripeLoading ? "Connecting..." : "Connect Stripe Account"}
+              </Button>
+              <div className="mt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowStripeGuide((prev) => !prev)}
+                >
+                  {showStripeGuide ? "Hide Stripe Onboarding Guide" : "View Stripe Onboarding Guide"}
+                </Button>
+              </div>
+              {showStripeGuide && (
+                <div className="mt-4 max-h-[60vh] overflow-y-auto pr-2 text-sm text-[#2d3d1f] space-y-4">
+                  <div>
+                    <h3 className="text-base font-semibold text-[#1f2b15]">Getting Paid on HERD</h3>
+                    <p className="text-[#556B2F]">
+                      Stripe is the same payment system used by platforms like Airbnb, Shopify, and Lyft. This guide
+                      walks you through what to choose during onboarding.
+                    </p>
+                  </div>
+
+                  <div>
+                    <h4 className="font-semibold text-[#1f2b15]">Why Stripe is required</h4>
+                    <ul className="mt-2 space-y-1 text-[#556B2F]">
+                      <li>• Collect payments from guests</li>
+                      <li>• Hold funds safely until a booking is complete</li>
+                      <li>• Deposit money directly into your bank account</li>
+                      <li>• Generate tax documents when required (1099s)</li>
+                    </ul>
+                    <p className="mt-2 text-[#556B2F]">
+                      HERD never sees your full bank or SSN details. That information goes directly to Stripe.
+                    </p>
+                  </div>
+
+                  <div>
+                    <h4 className="font-semibold text-[#1f2b15]">Step-by-step: what to choose</h4>
+                    <ol className="mt-2 space-y-3 text-[#556B2F]">
+                      <li>
+                        <strong>1. Business type:</strong> Most hosts should pick <strong>Individual / Sole proprietor</strong>.
+                        Choose this if you do not have an LLC or corporation. If you do, choose <strong>Company</strong>.
+                      </li>
+                      <li>
+                        <strong>2. Industry / category:</strong> Best matches are <strong>Education & Instruction</strong>,
+                        <strong> Personal Services</strong>, or <strong>Other → Community / Instructional Services</strong>.
+                        Avoid financial services, gambling, or crypto.
+                      </li>
+                      <li>
+                        <strong>3. What you are selling:</strong> Keep it simple, e.g. “In-person educational workshops,”
+                        “Hands-on homesteading classes,” or “Short-term equipment rentals.”
+                      </li>
+                      <li>
+                        <strong>4. Bank account:</strong> Use a checking account. Personal or business accounts both work.
+                        Savings accounts usually do not.
+                      </li>
+                      <li>
+                        <strong>5. Identity verification:</strong> Stripe may ask for your legal name, DOB, last 4 digits
+                        of SSN (US), and address. This is required by law and stored by Stripe.
+                      </li>
+                      <li>
+                        <strong>6. Tax information:</strong> If you cross IRS thresholds, Stripe may issue a 1099 at year-end.
+                        Stripe handles the form; HERD does not withhold taxes.
+                      </li>
+                    </ol>
+                  </div>
+
+                  <div>
+                    <h4 className="font-semibold text-[#1f2b15]">Equipment rentals + classes</h4>
+                    <p className="text-[#556B2F]">
+                      Whether you offer classes, equipment rentals, or both, Stripe treats this as services paid through
+                      an online platform. No special category is required.
+                    </p>
+                  </div>
+
+                  <div>
+                    <h4 className="font-semibold text-[#1f2b15]">Payout timing</h4>
+                    <p className="text-[#556B2F]">
+                      Funds are held when a booking is made and released after the class or rental is completed.
+                      Typical payout time is 2–5 business days.
+                    </p>
+                  </div>
+
+                  <div>
+                    <h4 className="font-semibold text-[#1f2b15]">Common problems & fixes</h4>
+                    <ul className="mt-2 space-y-1 text-[#556B2F]">
+                      <li>• “Account incomplete” → Open the Stripe link and complete missing fields.</li>
+                      <li>• “Payouts delayed” → Bank not verified, identity verification incomplete, or first payout delay.</li>
+                      <li>• “Do I need an LLC?” → No. Many hosts operate as individuals.</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <h4 className="font-semibold text-[#1f2b15]">Safety & trust</h4>
+                    <ul className="mt-2 space-y-1 text-[#556B2F]">
+                      <li>• Stripe is PCI-compliant (bank-level security)</li>
+                      <li>• HERD never stores your sensitive financial info</li>
+                      <li>• You can update bank details anytime in Stripe</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <h4 className="font-semibold text-[#1f2b15]">Need help?</h4>
+                    <p className="text-[#556B2F]">
+                      If Stripe asks confusing questions, contact HERD support or use Stripe support from your Stripe
+                      dashboard. We are happy to help you get set up and earning.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

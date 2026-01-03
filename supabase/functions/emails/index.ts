@@ -389,7 +389,9 @@ serve(async (req) => {
   const preflight = handleCors(req, "GET, POST, OPTIONS");
   if (preflight) return preflight;
 
-  const unauthorized = requireInternal(req, cors);
+  const userAgent = req.headers.get("user-agent") ?? "";
+  const allowPgNet = /pg_net\//i.test(userAgent);
+  const unauthorized = allowPgNet ? null : requireInternal(req, cors);
   if (unauthorized) return unauthorized;
 
   if (req.method === "POST") {

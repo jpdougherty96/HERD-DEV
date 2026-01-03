@@ -48,7 +48,7 @@ export const validateClassForm = (
   if (Number(form.maxStudents) < 1) return "Maximum students must be at least 1.";
   if (!form.address?.street || !form.address.city || !form.address.state || !form.address.zipCode)
     return "Please fill in all address fields.";
-  if (normalizeToCents(form.pricePerPerson, { assumeInputIsDollars: true }) <= 0)
-    return "Please enter a valid price.";
+  if (normalizeToCents(form.pricePerPerson, { assumeInputIsDollars: true }) < 500)
+    return "Price per person must be at least $5.00.";
   return null;
 };

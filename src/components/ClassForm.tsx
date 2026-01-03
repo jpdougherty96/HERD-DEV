@@ -322,12 +322,14 @@ export function ClassForm({
                 <Input
                   id="pricePerPerson"
                   type="number"
+                  min="5"
                   step="0.01"
                   value={formData.pricePerPerson}
                   onChange={(e) => handleChange("pricePerPerson", e.target.value)}
                   required
                   className={baseFieldClasses}
                 />
+                <p className="mt-1 text-xs text-[#556B2F]">Minimum $5.00 per person.</p>
               </div>
               <div>
                 <Label htmlFor="maxStudents">Max Students</Label>

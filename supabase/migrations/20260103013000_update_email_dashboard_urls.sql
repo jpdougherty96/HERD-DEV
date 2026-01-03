@@ -1,13 +1,4 @@
 -- Ensure email dashboard URLs use herd.rent
-
-do $$
-declare
-  db text := current_database();
-begin
-  execute format('alter database %I set app.host_dashboard_url = %L', db, 'https://herd.rent/dashboard');
-  execute format('alter database %I set app.guest_dashboard_url = %L', db, 'https://herd.rent/dashboard/guestview');
-end $$;
-
 create or replace function public.enqueue_booking_email_job(
   _booking_id uuid,
   _type text,
@@ -92,8 +83,8 @@ begin
     else array_to_string(v.student_names, ', ')
   end;
 
-  host_dashboard_base := coalesce(current_setting('app.host_dashboard_url', true), 'https://herd.rent/dashboard');
-  guest_dashboard_base := coalesce(current_setting('app.guest_dashboard_url', true), 'https://herd.rent/dashboard/guestview');
+  host_dashboard_base := 'https://herd.rent/dashboard';
+  guest_dashboard_base := 'https://herd.rent/dashboard/guestview';
 
   approve_url := host_dashboard_base || '?role=host&tab=bookings&booking=' || v.booking_id || '&action=approve';
   decline_url := host_dashboard_base || '?role=host&tab=bookings&booking=' || v.booking_id || '&action=deny';

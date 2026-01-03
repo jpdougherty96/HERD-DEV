@@ -1,0 +1,23 @@
+[functions.emails]
+verify_jwt = false
+
+[functions.stripe-webhook]
+verify_jwt = false
+
+[functions.send-unread-message-alerts]
+verify_jwt = false
+
+[functions.send-review-invites]
+verify_jwt = false
+
+[functions.release-held-payments]
+verify_jwt = false
+
+[functions.reconcile-payments]
+verify_jwt = false
+
+[functions.expire-booking-holds]
+verify_jwt = false
+
+[functions.expire-pending-bookings]
+verify_jwt = false

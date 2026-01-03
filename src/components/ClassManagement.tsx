@@ -122,8 +122,6 @@ export function ClassManagement({ classData, user, onNavigate, onDeleteClass, on
       }
 
       const items = Array.isArray(data) ? data : [];
-      const estimateStripeFeeCents = (totalCents: number) =>
-        Math.round(totalCents * 0.029 + 30);
       const mapped = items.map((b: any) => {
         const toCents = (value: any) => Math.max(0, Math.round(Number(value ?? 0)));
         const rawNames = Array.isArray(b.studentNames)
@@ -152,14 +150,19 @@ export function ClassManagement({ classData, user, onNavigate, onDeleteClass, on
           classData.pricePerPerson > 0
             ? Math.round(classData.pricePerPerson * resolvedQty * (1 + HERD_FEE_RATE))
             : 0;
+        const payoutFromPrice =
+          classData.pricePerPerson > 0
+            ? classData.pricePerPerson * resolvedQty
+            : 0;
         let grossTotal = expectedTotal > 0 ? expectedTotal : totalAmount;
         if (!grossTotal && (hostPayout > 0 || herdFee > 0)) {
           grossTotal = hostPayout + herdFee;
         }
 
-        const stripeFee =
-          grossTotal > 0 ? estimateStripeFeeCents(grossTotal) : 0;
-        const subtotal = grossTotal > 0 ? Math.max(0, grossTotal - stripeFee) : 0;
+        let subtotal = payoutFromPrice > 0 ? payoutFromPrice : hostPayout;
+        if (!subtotal && grossTotal > 0) {
+          subtotal = Math.round(grossTotal / (1 + HERD_FEE_RATE));
+        }
 
         return {
           id: b.id,

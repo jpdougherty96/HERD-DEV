@@ -53,12 +53,21 @@ export function UserDashboard({
   
   // ✅ Clean simplified logic for guest bookings
   const guestBookings = useMemo(() => {
+    const getSortDate = (booking: Booking) =>
+      new Date(`${booking.startDate ?? booking.createdAt}T${booking.startTime ?? '00:00'}`).getTime();
+    const getStatusOrder = (status?: string) => {
+      const normalized = (status ?? '').toString().toUpperCase();
+      if (['APPROVED', 'PAID', 'HELD'].includes(normalized)) return 0;
+      if (normalized === 'DENIED') return 1;
+      return 2;
+    };
+
     return bookings
       .filter(b => b.isGuestBooking)
       .sort((a, b) => {
-        const aDate = new Date(`${a.startDate ?? a.createdAt}T${a.startTime ?? '00:00'}`).getTime();
-        const bDate = new Date(`${b.startDate ?? b.createdAt}T${b.startTime ?? '00:00'}`).getTime();
-        return aDate - bDate; // soonest first
+        const order = getStatusOrder(a.status) - getStatusOrder(b.status);
+        if (order !== 0) return order;
+        return getSortDate(a) - getSortDate(b); // soonest first within each group
       });
   }, [bookings]);
 
